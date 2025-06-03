@@ -1,93 +1,86 @@
-import numpy as np
-import matplotlib.pyplot as plt
 import os
-import json
+import yaml
+import subprocess
 
-glacier_ids = {#'Aletsch_Glacier': ['RGI60-11.01450', 2900],
-               'Rhone_Glacier': ['RGI2000', 2950],
-               #'Mer_de_Glace': ['RGI60-11.03643', 2900],
-               #'Perito_Moreno': ['RGI60-17.00312', 1200],
-               #'Schiaparelli': ['RGI60-17.03160', 500],
-               #'Kronebreen': ['RGI60-07.01464', 720],
-               #'Engabreen':['RGI60-08.01657', 1000],
+glacier_ids = {'Aletsch_Glacier': ['RGI60-11.01450', 2900],
+               # 'Rhone_Glacier': ['RGI2000', 2950],
+               # 'Mer_de_Glace': ['RGI60-11.03643', 2900],
+               # 'Perito_Moreno': ['RGI60-17.00312', 1200],
+               # 'Schiaparelli': ['RGI60-17.03160', 500],
+               # 'Kronebreen': ['RGI60-07.01464', 720],
+               # 'Engabreen':['RGI60-08.01657', 1000],
                # 'Franz Josef': ['RGI60-18.02397', 2167],
-                #'Khumbu': ['RGI60-15.03733', 5568],
-                #'Columbia': ['RGI60-01.10689', 1309]
-
-
- }
+               # 'Khumbu': ['RGI60-15.03733', 5568],
+               # 'Columbia': ['RGI60-01.10689', 1309]
+               }
 
 
 def main():
     if not os.path.exists('data/'):
         os.mkdir('data/')
+
     for glacier in glacier_ids:
         data_dir = 'data/' + glacier + '/'
         if not os.path.exists(data_dir):
             os.mkdir(data_dir)
 
-        ela = glacier_ids[glacier][1]
-        download_param = {
-            "modules_preproc": ["oggm_shop"],
-            "modules_process": [],
-            "modules_postproc": [],
-            "oggm_RGI_ID": glacier_ids[glacier][0],
+        rgi_id = glacier_ids[glacier][0]
+        download_params = {
+            "core": {
+                "url_data": ""
+            },
+            "defaults": [
+                {"override /inputs": ["oggm_shop", "local"]},
+                {"override /processes": []},
+                {"override /outputs": []}
+            ],
+            "inputs": {"oggm_shop": {"RGI_ID": rgi_id}},
+            "processes": {},
+            "outputs": {}
         }
-        param_path = data_dir + 'download_param.json'
+        param_path = os.path.join(data_dir, 'experiment', 'download_param.yaml')
         with open(param_path, 'w') as f:
-            json.dump(download_param, f)
+            f.write("# @package _global_\n\n")  # Write the header first
+            yaml.dump(download_params, f)
 
-        os.chdir(data_dir)
-        print(os.getcwd())
-        #os.system("igm_run --param_file download_param.json")
-
-
-        # Load data from results_.json
-        with open('result_seed_1_1.0_50.json', 'r') as f:
-            results_data = json.load(f)
-
-        # Extract the "final_ensemble" list
-        final_ensemble = sorted(results_data.get("final_ensemble", []), key=lambda x: x[0])
-
-
-        # Ensure we have enough data for each iteration
-        if len(final_ensemble) < 6:
-            raise ValueError("Not enough data in 'final_ensemble' for 6 iterations.")
+        subprocess.run("igm_run +experiment=download_param", shell=True,
+                       cwd=data_dir)
 
         # Loop through each index and update the parameters accordingly
-        for temp in range(6):  # Equivalent to [0, 1, 2, 3, 4, 5]
+        for temp in range(5):
             print(f"Iteration {temp}: Using values from final_ensemble")
-
-            # Extract the values for this iteration
-            #ela_value, gradabl_value, gradacc_value = final_ensemble[temp]
 
             # Prepare the dictionary with updated values
             ela = glacier_ids[glacier][1]
-            data = {
-                "modules_preproc": ["load_ncdf"],
-                "modules_process": ["smb_simple", "iceflow", "time", "thk"],
-                "modules_postproc": ["write_ncdf", "print_info"],
-                "smb_simple_array": [
-                    ["time", "gradabl", "gradacc", "ela", "accmax"],
-                    [2000, 8/1000, 2/1000, ela,
-                     5.0],
-                    [2100, 8/1000, 2/1000, ela + 100 * temp, 5.0]
+            run_params = {
+                "core": {
+                    "url_data": ""
+                },
+                "defaults": [
+                    {"override /inputs": ["load_ncdf"]},
+                    {"override /processes": ["smb_simple", "iceflow", "time",
+                                             "thk"]},
+                    {"override /outputs": ["write_ncdf"]}
                 ],
-                "lncd_input_file": 'output_saved.nc',
-                "time_start": 2000,
-                "time_end": 2100,
-                "wncd_output_file": f"output_{temp}.nc"
-            }
+                "inputs": {"load_ncdf": {"input_file": "input.nc"}},
+                "processes": {"smb_simple": {"array": [
+                    ["time", "gradabl", "gradacc", "ela", "accmax"],
+                    [2000, 0.008, 0.002, ela, 5.0],
+                    [2100, 0.008, 0.002, ela + 100 * temp, 5.0]]},
+                    "time": {"start": 2000, "end": 2100}, },
 
+                "outputs": {"write_ncdf": {"output_file": f"output_{temp}.nc"}},
+                "hydra": {"run": {"dir": "outputs"}}
+            }
             # Write the updated parameters to run_params.json
-            with open('run_params.json', 'w') as f:
-                json.dump(data, f)
+            param_path = os.path.join(data_dir, 'experiment', 'run_params.yaml')
+            with open(param_path, 'w') as f:
+                f.write("# @package _global_\n\n")  # Write the header first
+                yaml.dump(run_params, f)
 
             # Execute the command
-            os.system("igm_run --param_file run_params.json")
-
-
-        os.chdir('../../')
+            subprocess.run("igm_run +experiment=run_params", shell=True,
+                           cwd=data_dir)
 
 
 if __name__ == '__main__':
