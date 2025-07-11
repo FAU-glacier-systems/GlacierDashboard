@@ -1,0 +1,32 @@
+core:
+  url_data: ''
+inputs:
+  load_ncdf:
+    input_file: input.nc
+processes:
+  smb_simple:
+    array:
+    - - time
+      - gradabl
+      - gradacc
+      - ela
+      - accmax
+    - - 2000
+      - 0.008
+      - 0.002
+      - 2900
+      - 5.0
+    - - 2100
+      - 0.008
+      - 0.002
+      - 3300
+      - 5.0
+  time:
+    start: 2000
+    end: 2100
+  thk: {}
+outputs:
+  write_ncdf:
+    output_file: output_cpu.nc
+core.hardware:
+  visible_gpus: []

@@ -1,0 +1,44 @@
+# @package _global_
+
+core:
+  url_data: ''
+defaults:
+- override /inputs:
+  - load_ncdf
+- override /processes:
+  - smb_simple
+  - iceflow
+  - time
+  - thk
+- override /outputs:
+  - write_ncdf
+hydra:
+  run:
+    dir: outputs
+inputs:
+  load_ncdf:
+    input_file: input.nc
+outputs:
+  write_ncdf:
+    output_file: output_4.nc
+processes:
+  smb_simple:
+    array:
+    - - time
+      - gradabl
+      - gradacc
+      - ela
+      - accmax
+    - - 2000
+      - 0.008
+      - 0.002
+      - 720
+      - 5.0
+    - - 2100
+      - 0.008
+      - 0.002
+      - 1120
+      - 5.0
+  time:
+    end: 2100
+    start: 2000

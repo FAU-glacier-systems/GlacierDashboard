@@ -1,0 +1,1 @@
+{"proj": "+proj=utm +zone=19 +south +datum=WGS84 +units=m +no_defs", "x0y0": [373076.8084967057, 3975935.734879544], "nxny": [162, 150], "dxdy": [100.0, -100.0], "pixel_ref": "center"}
