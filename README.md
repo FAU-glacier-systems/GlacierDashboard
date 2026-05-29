@@ -19,10 +19,6 @@ Interactive Dash app for visualizing glacier simulations in 3D and over time.
 * Volume time series (absolute and relative)
 * NetCDF loading via xarray
 
-## Screenshot
-
-![Screenshot](assets/img.png)
-
 ## Run locally
 
 ```bash
@@ -45,9 +41,3 @@ data/<glacier>/output_<temperature>.nc
 ```
 
 Required variables: `topg`, `usurf`, `thk`, `velsurf_mag`, `smb`, `time`
-
-## Notes
-
-* Runs on port 8050
-* Served via Nginx + HTTPS in production
-* NetCDF errors usually mean missing or corrupted files
