@@ -1,0 +1,15 @@
+# Model output and derived tables (too large for git; kept on the server)
+data/glacier_model_data/
+data/metrics_over_time_graphic/
+*.nc
+*.nc.tmp
+*.pkl
+
+# Local copies, editors, environments
+_backup/
+.idea/
+.vscode/
+.venv/
+venv/
+__pycache__/
+*.pyc
