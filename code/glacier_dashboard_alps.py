@@ -1,13 +1,13 @@
-import os, re, sys, glob, math, time, threading
+import os, re, sys, math, base64, hashlib, threading
 from pathlib import Path
+from urllib.parse import parse_qs
 
 import numpy as np
 import pandas as pd
 import xarray as xr
-import json
 from collections import OrderedDict
 
-from dash import Dash, dcc, html, Input, Output, State, ctx
+from dash import Dash, dcc, html, Input, Output, State, Patch, ctx, no_update
 from dash.exceptions import PreventUpdate
 import plotly.graph_objects as go
 
@@ -19,11 +19,14 @@ CODE_DIR = Path(__file__).resolve().parent           # ...\GitHub\code
 REPO_DIR = CODE_DIR.parent                           # ...\GitHub
 DATA_DIR = REPO_DIR / "data"
 
+
+def log(*a):
+    print("[alps-dashboard]", *a, file=sys.stdout, flush=True)
+
+
 GLACIERS_CSV = DATA_DIR / "glacier_location_and_name" / "glaciers_region11_alps.csv"
 NC_DIR = Path(os.environ.get("GLACIER_NC_DIR", DATA_DIR / "glacier_model_data"))
 
-# (optional) precomputed volume/area table (keep optional; safe if missing)
-VOLUME_TABLE_PATH = REPO_DIR.parent / "volume_and_area_table" / "volume_and_area_table.pkl"
 METRICS_TABLE_PATH = DATA_DIR / "metrics_over_time_graphic" / "glacier_yearly_metrics.csv"
 METRICS_DF = None
 if METRICS_TABLE_PATH.exists():
@@ -35,7 +38,7 @@ if METRICS_TABLE_PATH.exists():
         for c in ["rgi_id", "source", "experiment"]:
             if c in METRICS_DF.columns:
                 METRICS_DF[c] = METRICS_DF[c].astype(str)
-        print("[metrics] Loaded rows:", len(METRICS_DF))
+        log("Metrics rows loaded:", len(METRICS_DF))
     except Exception as e:
         METRICS_DF = None
         log("[WARN] Failed to load metrics table:", METRICS_TABLE_PATH, "::", repr(e))
@@ -49,8 +52,44 @@ else:
 # =========================
 FONT_FAMILY = "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 
-# >>> ADDED: unified section heading style (bigger + consistent)
-SECTION_H_STYLE = {"margin": "0 0 8px 0", "fontSize": "22px", "fontWeight": 700}
+# Figure colours per UI theme (page colours are in assets/style.css)
+THEMES = {
+    "dark": {
+        "fg": "#e6e6e6", "grid": "#262626",
+        "map_style": "carto-darkmatter",
+        "hillshade": "https://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade_Dark/MapServer/tile/{z}/{y}/{x}",
+        "hillshade_opacity": 0.75,
+        "marker": "#7dd3fc",
+        "rcp": {"rcp_2_6": "#e3b505", "rcp_4_5": "#ff8c00", "rcp_8_5": "#ff6b6b"},
+        "hist": "#a3a3a3",
+    },
+    "light": {
+        "fg": "#1a1a1a", "grid": "#e8e8e8",
+        "map_style": "carto-positron",
+        "hillshade": "https://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}",
+        "hillshade_opacity": 0.45,
+        "marker": "#0369a1",
+        "rcp": {"rcp_2_6": "#b58900", "rcp_4_5": "#e06c00", "rcp_8_5": "#d62828"},
+        "hist": "#737373",
+    },
+}
+
+
+def theme_of(name):
+    return THEMES.get(name, THEMES["dark"])
+
+
+def base_layout(theme, **extra):
+    """Transparent figure background so the page colour shows through."""
+    t = theme_of(theme)
+    layout = dict(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color=t["fg"], family=FONT_FAMILY, size=12),
+        margin=dict(l=0, r=0, t=0, b=0),
+    )
+    layout.update(extra)
+    return layout
 
 MAX_SIDE = 220  # 3D downsample
 
@@ -75,10 +114,6 @@ SCENARIO_COLORS = {
 
 RGI_RE = re.compile(r"^(RGI2000-v7\.0-G-\d{2}-\d{5})_")
 RCP_RE = re.compile(r"_(rcp_\d_\d)_", re.IGNORECASE)
-
-
-def log(*a):
-    print("[alps-dashboard]", *a, file=sys.stdout, flush=True)
 
 
 def as_int(x) -> int:
@@ -193,16 +228,6 @@ for eng in ("netcdf4", "h5netcdf"):
         pass
 
 
-def open_nc(path: str):
-    for eng in ("netcdf4", "h5netcdf"):
-        if eng in AVAILABLE_ENGINES:
-            try:
-                return xr.open_dataset(path, engine=eng)
-            except Exception:
-                continue
-    return xr.open_dataset(path)
-
-
 # ---- Optional Dask + dataset cache (for smooth timelapse) ----
 try:
     import dask  # noqa: F401
@@ -242,16 +267,6 @@ def open_nc_cached(path: str) -> xr.Dataset:
         ds = xr.open_dataset(path)
     _DS_CACHE[path] = ds
     return ds
-
-def clear_ds_cache():
-    """Close cached datasets if you ever need to reclaim memory."""
-    for _, ds in list(_DS_CACHE.items()):
-        try:
-            ds.close()
-        except Exception:
-            pass
-    _DS_CACHE.clear()
-
 
 def years_array_from_time(tvals):
     tv = np.array(tvals)
@@ -420,29 +435,6 @@ def load_slice_cordex2d(path, var, target_year, scenario_key):
     ysel = as_int(years[ti])
     return topg, usurf, prop_map, thk, xs, ys, ysel
 
-
-    sc_dim = "experiment" if ds.sizes.get("experiment", None) == 3 else detect_scenario_dim(ds, preferred_var=("usurf" if "usurf" in ds else var))
-    if sc_dim is None:
-        raise KeyError("Could not detect scenario dimension (expected a length-3 dim).")
-
-    si = SCENARIO_TO_IDX.get(str(scenario_key), 1)
-
-    if "topg" not in ds or "usurf" not in ds:
-        raise KeyError("Dataset missing 'topg'/'usurf'")
-
-    topg = ds["topg"].isel(**{k: v for k, v in {sc_dim: si, "time": ti}.items() if k in ds["topg"].dims}).values
-    usurf = ds["usurf"].isel(**{k: v for k, v in {sc_dim: si, "time": ti}.items() if k in ds["usurf"].dims}).values
-
-    Zvar  = get_var_or_fallback(ds, var, {"time": ti, sc_dim: si})
-
-    if "thk" in ds:
-        thk = ds["thk"].isel(**{k: v for k, v in {sc_dim: si, "time": ti}.items() if k in ds["thk"].dims}).values
-    else:
-        thk = usurf - topg
-
-    xs, ys = coords_from_ds(ds, usurf)
-    return topg, usurf, Zvar, thk, xs, ys, as_int(years[ti])
-
 def load_slice_chain(path, var, target_year):
     ds = open_nc_cached(path)
     years = years_array_from_time(ds["time"].values)
@@ -529,666 +521,550 @@ PREFERRED_DEFAULT_RGIS = [
 ]
 DEFAULT_RGI = next((r for r in PREFERRED_DEFAULT_RGIS if r in ALL_RGIS), ALL_RGIS[0])
 DEFAULT_COUNTRY = GLACIERS_DF.loc[GLACIERS_DF["rgi_id"] == DEFAULT_RGI, "country"].iloc[0]
+GLACIER_NAMES = {
+    str(r): str(n).strip()
+    for r, n in zip(GLACIERS_DF["rgi_id"], GLACIERS_DF["glac_name"].fillna(""))
+    if str(n).strip() and str(n).strip().lower() != "nan"
+}
 
 
-# year slider bounds (quick scan: try to open first file)
-def infer_year_bounds():
-    rgi = DEFAULT_RGI
-    entry = DATA_INDEX[rgi]
-    # pick any available file
-    sample = entry.get("w5e5_mean") or (entry["chains"]["rcp_4_5"][0] if entry["chains"]["rcp_4_5"] else None)
-    if not sample:
-        return 2000, 2100
-    try:
-        with open_nc(sample) as ds:
-            years = years_array_from_time(ds["time"].values)
-            y0, y1 = int(np.nanmin(years)), int(np.nanmax(years))
-            return y0, y1
-    except Exception:
-        return 2000, 2100
-
-
-
-YEAR_MIN, YEAR_MAX = 2000, 2100
-
-# Discrete 10-year steps (fixed)
-YEARS = list(range(2000, 2101, 1))
-YEARS_DISPLAY_5 = list(range(2000, 2101, 5))
+# Model years (annual steps)
+YEARS = list(range(2000, 2101))
 
 DEFAULT_YEAR = 2020
 
 
 
+VAR_TO_PROP = {v: k for k, v in PROP_TO_VAR.items()}
+DEFAULT_VAR = "thk"
+
+METRIC_LABELS = {
+    "volume_km3": "Volume (km³)",
+    "area_km2": "Area (km²)",
+    "thk_mean_m": "Mean thickness (m)",
+    "smb_mean": "Mean SMB (m/a)",
+    "vel_mean": "Mean velocity (m/a)",
+}
+# area_km2 is in the table too, but it is constant over time (grid area), so it is not offered
+METRIC_OPTIONS = ["volume_km3", "thk_mean_m", "smb_mean", "vel_mean"]
+DEFAULT_METRIC = "volume_km3"
+
+
+def glacier_label(rgi):
+    name = GLACIER_NAMES.get(str(rgi))
+    return f"{name} ({rgi})" if name else str(rgi)
+
+
+def glacier_options(country):
+    dff = GLACIERS_DF if not country else GLACIERS_DF[GLACIERS_DF["country"] == country]
+    return [{"label": glacier_label(r), "value": r} for r in dff["rgi_id"]]
+
+
+def country_of(rgi):
+    row = GLACIERS_DF.loc[GLACIERS_DF["rgi_id"] == rgi, "country"]
+    return row.iloc[0] if len(row) else None
+
+
+def url_params(search):
+    """Query string -> {key: first value}."""
+    return {k: v[0] for k, v in parse_qs((search or "").lstrip("?")).items() if v}
+
+
 # =========================
 # Figures
 # =========================
+def fit_map_view(lats, lons, width, height, max_zoom=9.0):
+    """Centre and zoom so that all points fit a width×height px web-mercator map."""
+    lats = np.asarray(lats, dtype=float)
+    lons = np.asarray(lons, dtype=float)
+    lat0, lat1 = float(np.nanmin(lats)), float(np.nanmax(lats))
+    lon0, lon1 = float(np.nanmin(lons)), float(np.nanmax(lons))
+
+    def merc(lat):
+        return math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
+
+    pad = 1.3  # leave a margin around the outermost glaciers
+    frac_x = max(lon1 - lon0, 0.02) * pad / 360.0
+    frac_y = max(merc(lat1) - merc(lat0), 0.0005) * pad / (2 * math.pi)
+    # MapLibre renders 512 px tiles: world width in px = 512 * 2**zoom
+    zoom = min(math.log2(max(width, 100) / 512 / frac_x), math.log2(max(height, 100) / 512 / frac_y), max_zoom)
+    ymid = (merc(lat0) + merc(lat1)) / 2
+    lat_c = math.degrees(2 * math.atan(math.exp(ymid)) - math.pi / 2)
+    return {"lat": lat_c, "lon": (lon0 + lon1) / 2}, zoom
 
 
-
-def make_globe_fig(dff: pd.DataFrame, selected_rgi: str | None):
-    """Overview map with BW hillshade + orange borders + black oceans.
-
-    - Uses Plotly MapLibre 'scattermap'
-    - Hillshade is raster tiles
-    - Borders are a GeoJSON line layer (fast + reliable)
-    """
+def make_globe_fig(dff: pd.DataFrame, selected_rgi, theme, center, zoom, uirevision):
+    """Overview map: glacier markers on a hillshade basemap."""
+    t = theme_of(theme)
     fig = go.Figure()
 
-    # Glacier markers
     fig.add_trace(go.Scattermap(
         lon=dff["cenlon"],
         lat=dff["cenlat"],
         mode="markers",
-        marker=dict(size=7, color="#7dd3fc"),
-        text=[f"{n} ({i})" if str(n).strip() else i for n, i in zip(dff["glac_name"], dff["rgi_id"])],
+        marker=dict(size=8, color=t["marker"]),
+        text=[glacier_label(r) for r in dff["rgi_id"]],
         customdata=dff["rgi_id"],
         hovertemplate="%{text}<extra></extra>",
-        name="Glaciers",
     ))
 
-    # Selected glacier marker
-    if selected_rgi:
-        sel = dff[dff["rgi_id"] == selected_rgi]
-        if not sel.empty:
-            s = sel.iloc[0]
-            fig.add_trace(go.Scattermap(
-                lon=[float(s.cenlon)],
-                lat=[float(s.cenlat)],
-                mode="markers",
-                marker=dict(size=13, color="#f97316"),
-                text=[f"Selected: {s.glac_name} ({s.rgi_id})" if str(s.glac_name).strip() else f"Selected: {s.rgi_id}"],
-                customdata=[s.rgi_id],
-                hovertemplate="%{text}<extra></extra>",
-                name="Selected",
-            ))
+    sel = GLACIERS_DF[GLACIERS_DF["rgi_id"] == selected_rgi]
+    if not sel.empty:
+        s = sel.iloc[0]
+        fig.add_trace(go.Scattermap(
+            lon=[float(s.cenlon)],
+            lat=[float(s.cenlat)],
+            mode="markers",
+            marker=dict(size=14, color="#f97316"),
+            text=[glacier_label(s.rgi_id)],
+            customdata=[s.rgi_id],
+            hovertemplate="Selected: %{text}<extra></extra>",
+        ))
 
-    # Borders layer source (line geometries)
-    borders_lines = globals().get("BORDER_LINES_GJ", {"type": "FeatureCollection", "features": []})
-
-    fig.update_layout(
-        paper_bgcolor="#000",
-        plot_bgcolor="#000",
-        font=dict(color="#eaeaea", family=FONT_FAMILY),
-        margin=dict(l=0, r=0, t=0, b=0),
-        legend=dict(orientation="h", yanchor="bottom", y=0.01, xanchor="left", x=0.01),
+    fig.update_layout(**base_layout(
+        theme,
+        showlegend=False,
+        uirevision=uirevision,  # a new value re-applies centre/zoom; otherwise the user's pan/zoom is kept
         map=dict(
-            # Dark basemap => oceans/background black-ish (your request)
-            style="carto-darkmatter",
-            center=dict(lat=46.25, lon=10.6),
-            zoom=5.3,
-            layers=[
-                dict(
-                    sourcetype="raster",
-                    source=[
-                        "https://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade_Dark/MapServer/tile/{z}/{y}/{x}"
-                    ],
-                    below="traces",
-                    opacity=0.75,
-                ),
-                dict(
-                    sourcetype="geojson",
-                    source=borders_lines,
-                    type="line",
-                    color="#f6ad55",
-                    line=dict(width=1.6),
-                    below="traces",
-                    opacity=1.0,
-                ),
-            ],
+            style=t["map_style"],
+            center=center,
+            zoom=zoom,
+            layers=[dict(
+                sourcetype="raster",
+                source=[t["hillshade"]],
+                below="traces",
+                opacity=t["hillshade_opacity"],
+            )],
         ),
-    )
+    ))
     return fig
 
 
-# =========================
-# Assets (CSS) — robust across Dash versions (no html.Style)
-# =========================
-ASSETS_DIR = CODE_DIR / "assets"
-ASSETS_DIR.mkdir(parents=True, exist_ok=True)
+def typed_array(a):
+    """numpy array -> plotly.js typed-array spec (float32, base64); about 4x smaller than JSON numbers."""
+    a = np.ascontiguousarray(a, dtype=np.float32)
+    return {"dtype": "f4", "bdata": base64.b64encode(a.tobytes()).decode("ascii"), "shape": ",".join(map(str, a.shape))}
 
-_UI_FIXES_CSS = r"""
-/* =========================================================
-   Force dropdown selected value + input text BLACK
-   (covers multiple react-select versions / hashed classnames)
-   ========================================================= */
-
-/* Make control background white so black text is readable */
-#metric_var_select .Select-control,
-#metric_var_select .select__control,
-#metric_var_select [class*="control"],
-.dropdown-black .Select-control,
-.dropdown-black .select__control,
-.dropdown-black [class*="control"] {
-  background-color: #fff !important;
-}
-
-/* Selected value text */
-#metric_var_select .Select-value-label,
-#metric_var_select .Select-value,
-#metric_var_select .select__single-value,
-#metric_var_select [class*="singleValue"],
-#metric_var_select [class*="SingleValue"],
-#metric_var_select [class*="ValueContainer"] div,
-#metric_var_select [class*="valueContainer"] div,
-#metric_var_select .css-1dimb5e-singleValue,
-#metric_var_select .css-qc6sy-singleValue,
-.dropdown-black .Select-value-label,
-.dropdown-black .Select-value,
-.dropdown-black .select__single-value,
-.dropdown-black [class*="singleValue"],
-.dropdown-black [class*="SingleValue"],
-.dropdown-black [class*="ValueContainer"] div,
-.dropdown-black [class*="valueContainer"] div {
-  color: #000 !important;
-}
-
-/* Placeholder + typed text */
-#metric_var_select .Select-placeholder,
-#metric_var_select .select__placeholder,
-#metric_var_select [class*="placeholder"],
-#metric_var_select .Select-input input,
-#metric_var_select .select__input input,
-#metric_var_select input,
-.dropdown-black .Select-placeholder,
-.dropdown-black .select__placeholder,
-.dropdown-black [class*="placeholder"],
-.dropdown-black input {
-  color: #000 !important;
-}
-
-/* Menu options */
-#metric_var_select .Select-menu-outer,
-#metric_var_select .Select-option,
-#metric_var_select .VirtualizedSelectOption,
-#metric_var_select .select__menu,
-#metric_var_select .select__option,
-.dropdown-black .Select-menu-outer,
-.dropdown-black .Select-option,
-.dropdown-black .VirtualizedSelectOption,
-.dropdown-black .select__menu,
-.dropdown-black .select__option {
-  color: #000 !important;
-  background-color: #fff !important;
-}
-
-/* Focused/selected option background (keep readable) */
-#metric_var_select .is-focused,
-#metric_var_select .is-selected,
-#metric_var_select .select__option--is-focused,
-#metric_var_select .select__option--is-selected,
-.dropdown-black .is-focused,
-.dropdown-black .is-selected,
-.dropdown-black .select__option--is-focused,
-.dropdown-black .select__option--is-selected {
-  background-color: #f0f0f0 !important;
-  color: #000 !important;
-}
-
-/* =========================================================
-   Slider tooltip (selected year) text BLACK
-   ========================================================= */
-#year_slider .rc-slider-tooltip-inner,
-#year_slider [class*="rc-slider-tooltip-inner"],
-.slider-black-tooltip .rc-slider-tooltip-inner,
-.slider-black-tooltip [class*="rc-slider-tooltip-inner"] {
-  color: #000 !important;
-  background: #fff !important;
-}
-"""
-
-
-_css_path = ASSETS_DIR / "ui_fixes.css"
-try:
-    # Keep assets/ui_fixes.css consistent with code; only write when it changed
-    # (the production service runs with a read-only home directory)
-    if not _css_path.is_file() or _css_path.read_text(encoding="utf-8") != _UI_FIXES_CSS:
-        _css_path.write_text(_UI_FIXES_CSS, encoding="utf-8")
-except Exception as _e:
-    log("[WARN] Failed to write assets CSS:", _css_path, "->", repr(_e))
 
 # =========================
 # App
 # =========================
+# Styling lives in assets/style.css. The theme is a data-theme attribute on <html>;
+# this inline script applies the saved theme before first paint so there is no flash.
+INDEX_STRING = """<!DOCTYPE html>
+<html data-theme="dark">
+<head>
+{%metas%}
+<title>{%title%}</title>
+<script>try{var t=JSON.parse(localStorage.getItem("theme"));if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}</script>
+{%favicon%}
+{%css%}
+</head>
+<body>
+{%app_entry%}
+<footer>{%config%}{%scripts%}{%renderer%}</footer>
+</body>
+</html>"""
+
 app = Dash(
     __name__,
-    assets_folder=str(ASSETS_DIR),
+    assets_folder=str(CODE_DIR / "assets"),
     title="Glacier Dashboard — Alps (RGI 11)",
-    meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1, maximum-scale=1"}],
+    meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1"}],
+    index_string=INDEX_STRING,
 )
 server = app.server  # WSGI entry point for gunicorn
 
+LOGO_FAU = "Friedrich-Alexander-Universität_Erlangen-Nürnberg_Logo_07.2022.svg.png"
+LOGO_ERC = "LOGO_ERC-FLAG_EU-no text.png"
+
+
+def panel_head(title, *extra):
+    return html.Div(className="panel-head", children=[html.H2(title), *extra])
+
+
+def field(label, control):
+    return html.Label(className="field", children=[html.Span(label), control])
+
+
+def logos(class_name):
+    # rendered twice: in the sidebar (landscape) and as a footer (portrait); CSS shows one
+    return html.Div(className=class_name, children=[
+        html.Img(src=app.get_asset_url(LOGO_FAU), className="logo-fau",
+                 alt="Friedrich-Alexander-Universität Erlangen-Nürnberg"),
+        html.Img(src=app.get_asset_url(LOGO_ERC), className="logo-erc",
+                 alt="Funded by the European Union · European Research Council"),
+    ])
+
+
+def empty_fig(theme="dark"):
+    return go.Figure(layout=base_layout(theme, xaxis={"visible": False}, yaxis={"visible": False}))
+
+
 app.layout = html.Div(
-    style={"background": "#000", "color": "#eaeaea", "fontFamily": FONT_FAMILY, "padding": "10px"},
+    className="app",
     children=[
-        # Stores
-        dcc.Store(id="selected_rgi", data=DEFAULT_RGI),
+        # URL (?glacier=…&scenario=…&property=…&year=…&metric=…) is read once on load
+        # and kept up to date with history.replaceState, so any view can be bookmarked or shared.
+        dcc.Location(id="url", refresh=False),
+        dcc.Store(id="url_sync"),
+        dcc.Store(id="selected_rgi"),
+        dcc.Store(id="map_view"),          # {"bounds"|"point", "rev"}: where the map should move to
+        dcc.Store(id="globe_size"),        # map size in px, measured in the browser
+        dcc.Store(id="surface_static"),    # signature of what the 3D figure shows apart from the ice surface
+        dcc.Store(id="frame_year"),        # last year the 3D callback finished (paces the timelapse)
         dcc.Store(id="camera_mode", data="free"),
-        dcc.Store(id="timelapse_on", data=False),
+        dcc.Store(id="theme", data="dark", storage_type="local"),
         dcc.Interval(id="timelapse_interval", interval=300, disabled=True),
 
-        html.Div(
-            style={"display": "flex", "gap": "10px", "alignItems": "stretch"},
+        # Controls
+        html.Section(
+            className="panel panel-ctrl",
             children=[
-                # LEFT: Globe
                 html.Div(
-                    style={"flex": "1.2", "background": "#050505", "borderRadius": "18px", "padding": "10px"},
+                    className="brand",
                     children=[
-                        # >>> CHANGED: unified, bigger heading
-                        html.H4("Alpine glaciers overview map", style=SECTION_H_STYLE),
-                        dcc.Graph(
-                            id="globe",
-                            figure=make_globe_fig(GLACIERS_DF, DEFAULT_RGI),
-                            style={"height": "52vh"},
-                            config={"displayModeBar": False, "scrollZoom": True},
-                        ),
-                        html.Div(id="dbg", style={"fontSize": "12px", "opacity": 0.8, "marginTop": "6px"}),
+                        html.Div([
+                            html.H1("Alpine glacier evolution"),
+                            html.P("RGI region 11 · 2000–2100", className="muted"),
+                        ]),
+                        html.Button("☀", id="theme_toggle", n_clicks=0, className="btn icon-btn",
+                                    title="Switch light/dark theme", **{"aria-label": "Switch light/dark theme"}),
                     ],
                 ),
-
-                # MIDDLE: Controls
                 html.Div(
-                    style={"flex": "0.9", "background": "#050505", "borderRadius": "14px", "padding": "10px"},
+                    className="fields",
                     children=[
-                        # >>> CHANGED: unified, bigger heading
-                        html.H4("Controls", style=SECTION_H_STYLE),
-
-                        html.H5("Search all modelled glaciers", style={"marginTop": "0px", "marginBottom": "6px"}),
-
-                        dcc.Input(
-                            id="search_query",
-                            type="text",
-                            value="",
-                            placeholder="Search glacier name below",
-                            debounce=False,
-                            style={
-                                "width": "100%",
-                                "padding": "8px",
-                                "borderRadius": "8px",
-                                "border": "1px solid #444",
-                                "background": "#0b0b0b",
-                                "color": "#eaeaea",
-                            },
-                        ),
-
-                        html.Div(style={"height": "8px"}),
-
-                        dcc.Dropdown(
-                            id="search_suggestions",
-                            options=[],
-                            value=None,
-                            clearable=True,
-                            placeholder="Suggestions…",
-                            style={"color": "#111"},
-                        ),
-
-                        html.Div(style={"height": "10px", "borderBottom": "1px solid #222", "marginBottom": "10px"}),
-
-                        html.Label("Country"),
-                        dcc.Dropdown(
+                        field("Country", dcc.Dropdown(
                             id="country_select",
                             options=[{"label": c, "value": c} for c in COUNTRIES],
-                            value=DEFAULT_COUNTRY,
                             clearable=True,
-                            style={"color": "#111"},
-                        ),
-
-                        html.Div(style={"height": "8px"}),
-
-                        html.Label("Glacier"),
-                        dcc.Dropdown(
+                            placeholder="All countries",
+                        )),
+                        field("Glacier", dcc.Dropdown(
                             id="rgi_select",
                             options=[],  # filled by callback
-                            value=DEFAULT_RGI,
                             clearable=False,
-                            style={"color": "#111"},
-                        ),
-
-                        html.Div(style={"height": "8px"}),
-
-                        html.Label("Scenario"),
-                        dcc.Dropdown(
+                            placeholder="Search by name or RGI ID",
+                        )),
+                        field("Scenario", dcc.Dropdown(
                             id="scenario",
-                            options=[{"label": SCENARIO_LABELS[k], "value": k} for k in ["rcp_2_6", "rcp_4_5", "rcp_8_5"]],
-                            value=default_scenario_for(DEFAULT_RGI, DATA_INDEX),
+                            options=[{"label": SCENARIO_LABELS[k], "value": k} for k in SCENARIO_LABELS],
                             clearable=False,
-                            style={"color": "#111"},
-                        ),
-
-                        html.Div(style={"height": "8px"}),
-
-                        html.Label("Property"),
-                        dcc.Dropdown(
+                            searchable=False,
+                        )),
+                        field("Property", dcc.Dropdown(
                             id="property",
-                            options=[{"label": k, "value": k} for k in PROP_TO_VAR.keys()],
-                            value="Thickness (m)",
+                            options=[{"label": k, "value": v} for k, v in PROP_TO_VAR.items()],
                             clearable=False,
-                            style={"color": "#111"},
-                        ),
+                            searchable=False,
+                        )),
                     ],
                 ),
-
-                # RIGHT: Timeseries
-                html.Div(
-                    style={"flex": "1.0", "background": "#050505", "borderRadius": "18px", "padding": "10px"},
-                    children=[
-                        # >>> CHANGED: unified, bigger heading
-                        html.H4("Projected parameters until 2100", style=SECTION_H_STYLE),
-                        html.Div(
-                            style={"display": "flex", "gap": "8px", "alignItems": "center", "marginBottom": "6px"},
-                            children=[
-                                html.Span("Variable:", style={"fontSize": "12px", "opacity": 0.85}),
-                                dcc.Dropdown(
-                                    id="metric_var_select",
-                                    className="dropdown-black",
-                                    options=[
-                                        {"label": "Volume (km³)", "value": "volume_km3"},
-                                        {"label": "Mean thickness (m)", "value": "thk_mean_m"},
-                                        {"label": "SMB mean", "value": "smb_mean"},
-                                        {"label": "Velocity mean", "value": "vel_mean"},
-                                    ],
-                                    value="volume_km3",
-                                    clearable=False,
-                                    searchable=False,
-                                    style={"flex": "1"},
-                                ),
-                            ],
-                        ),
-                        dcc.Graph(
-                            id="glacier_timeseries",
-                            figure=go.Figure(layout=go.Layout(
-                                title="Select a glacier",
-                                paper_bgcolor="#000", plot_bgcolor="#000",
-                                font=dict(color="#eaeaea", family=FONT_FAMILY)
-                            )),
-                            style={"height": "52vh"},
-                            config={"displayModeBar": False},
-                        ),
-                    ],
-                ),
+                logos("logos logos-side"),
             ],
         ),
 
-        html.Div(style={"height": "10px"}),
-
-        # Bottom: 3D
-        html.Div(
-            style={"background": "#050505", "borderRadius": "18px", "padding": "10px"},
+        # 3D view
+        html.Section(
+            className="panel panel-3d",
             children=[
-                # >>> CHANGED: unified, bigger heading
-                html.H4("3D view of selected glacier", style=SECTION_H_STYLE),
-
-                dcc.Graph(
-                    id="mnt_surface",
-                    style={"height": "55vh"},
-                    config={"displayModeBar": False},
-                    figure=go.Figure(),
-                ),
-
-                # --- 3D controls BELOW the 3D plot ---
+                panel_head("Glacier view", html.Span(id="surface_note", className="muted ellipsis")),
+                html.Div(className="plot", children=dcc.Loading(
+                    parent_className="plot-fill",
+                    type="circle",
+                    color="#0ea5e9",
+                    delay_show=700,  # timelapse frames are faster than this, so no flicker
+                    overlay_style={"visibility": "visible", "opacity": 0.6},
+                    children=dcc.Graph(
+                        id="mnt_surface",
+                        className="graph",
+                        figure=empty_fig(),
+                        responsive=True,
+                        config={"displayModeBar": False},
+                    ),
+                )),
                 html.Div(
-                    style={
-                        "display": "flex",
-                        "gap": "10px",
-                        "alignItems": "center",
-                        "flexWrap": "wrap",
-                        "marginTop": "8px",
-                    },
+                    className="toolbar",
                     children=[
-                        html.Button(
-                            "Top-down view",
-                            id="btn_topdown",
-                            n_clicks=0,
-                            style={"padding": "6px 10px", "borderRadius": "8px"},
-                        ),
-                        html.Button(
-                            "▶ Timelapse",
-                            id="btn_timelapse",
-                            n_clicks=0,
-                            style={"padding": "6px 10px", "borderRadius": "8px"},
-                        ),
-
-                        # >>> CHANGED: checklist label forced white
+                        html.Button("▶ Play", id="btn_timelapse", n_clicks=0, className="btn"),
+                        html.Button("2D map", id="btn_topdown", n_clicks=0, className="btn",
+                                    title="Switch between the 3D view and a top-down map"),
                         dcc.Checklist(
                             id="toggle_isohypses",
-                            options=[{
-                                "label": html.Span("Show 200m isohypses (edge labels)", style={"color": "#eaeaea"}),
-                                "value": "iso"
-                            }],
+                            className="check",
+                            options=[{"label": "200 m contours", "value": "iso"}],
                             value=[],
-                            style={"fontSize": "13px", "color": "#eaeaea"},
                         ),
-
-                        html.Div(style={"flex": "1"}),
-
                         html.Div(
-                            style={"minWidth": "360px"},
-                            children=[
-                                # >>> CHANGED: "Year" label text black
-                                html.Div("Year", style={"fontSize": "12px", "opacity": 0.85, "color": "#000"}),
-
-                                dcc.Slider(
-                                    id="year_slider",
-                                    className="slider-black-tooltip",
-                                    min=min(YEARS),
-                                    max=max(YEARS),
-                                    step=1,
-                                    value=DEFAULT_YEAR,
-                                    marks={y: str(y) for y in range(min(YEARS), max(YEARS) + 1, 5)},
-                                    tooltip={"placement": "bottom", "always_visible": False},
-                                ),
-                            ],
+                            className="year",
+                            children=dcc.Slider(
+                                id="year_slider",
+                                min=min(YEARS),
+                                max=max(YEARS),
+                                step=1,
+                                value=DEFAULT_YEAR,
+                                marks={y: str(y) for y in range(min(YEARS), max(YEARS) + 1, 20)},
+                                tooltip={"placement": "top", "always_visible": False},
+                            ),
                         ),
                     ],
                 ),
-
-                html.Div(id="surface_note", style={"fontSize": "12px", "opacity": 0.85, "marginTop": "6px"}),
             ],
         ),
+
+        # Overview map
+        html.Section(
+            className="panel panel-map",
+            children=[
+                panel_head("Overview map"),
+                html.Div(className="plot", children=dcc.Graph(
+                    id="globe",
+                    className="graph",
+                    figure=empty_fig(),
+                    responsive=True,
+                    config={"displayModeBar": False, "scrollZoom": True},
+                )),
+            ],
+        ),
+
+        # Time series
+        html.Section(
+            className="panel panel-ts",
+            children=[
+                panel_head(
+                    "Projection to 2100",
+                    dcc.Dropdown(
+                        id="metric_var_select",
+                        className="head-select",
+                        options=[{"label": METRIC_LABELS[m], "value": m} for m in METRIC_OPTIONS],
+                        clearable=False,
+                        searchable=False,
+                    ),
+                ),
+                html.Div(className="ts-legend", children=[
+                    html.Span("Historical", className="lg lg-hist"),
+                    *[html.Span(label, className=f"lg lg-{key}") for key, label in SCENARIO_LABELS.items()],
+                ]),
+                html.Div(className="plot", children=dcc.Graph(
+                    id="glacier_timeseries",
+                    className="graph",
+                    figure=empty_fig(),
+                    responsive=True,
+                    config={"displayModeBar": False},
+                )),
+            ],
+        ),
+
+        logos("logos logos-foot"),
     ],
 )
 
 
 # =========================
-# Callbacks
+# Client-side callbacks: theme, URL, map size
+# =========================
+app.clientside_callback(
+    "function(n, t) { return t === 'light' ? 'dark' : 'light'; }",
+    Output("theme", "data"),
+    Input("theme_toggle", "n_clicks"),
+    State("theme", "data"),
+    prevent_initial_call=True,
+)
+
+app.clientside_callback(
+    """function(t) {
+        t = (t === 'light') ? 'light' : 'dark';
+        document.documentElement.dataset.theme = t;
+        return t === 'dark' ? '☀' : '☾';
+    }""",
+    Output("theme_toggle", "children"),
+    Input("theme", "data"),
+)
+
+app.clientside_callback(
+    """function(glacier, scenario, property, year, metric) {
+        const p = new URLSearchParams();
+        if (glacier) p.set('glacier', glacier);
+        if (scenario) p.set('scenario', scenario);
+        if (property) p.set('property', property);
+        if (year) p.set('year', year);
+        if (metric) p.set('metric', metric);
+        window.history.replaceState(window.history.state, '', window.location.pathname + '?' + p.toString());
+        return window.dash_clientside.no_update;
+    }""",
+    Output("url_sync", "data"),
+    Input("selected_rgi", "data"),
+    Input("scenario", "value"),
+    Input("property", "value"),
+    Input("year_slider", "value"),
+    Input("metric_var_select", "value"),
+    prevent_initial_call=True,
+)
+
+app.clientside_callback(
+    """function(_) {
+        const el = document.getElementById('globe');
+        return el ? {w: el.clientWidth, h: el.clientHeight} : {w: 600, h: 400};
+    }""",
+    Output("globe_size", "data"),
+    Input("url", "pathname"),
+)
+
+
+# =========================
+# Callbacks: selection and settings
 # =========================
 @app.callback(
-    Output("rgi_select", "options"),
-    Output("rgi_select", "value"),
-    Input("country_select", "value"),
-    Input("selected_rgi", "data"),
+    Output("scenario", "value"),
+    Output("property", "value"),
+    Output("metric_var_select", "value"),
+    Input("url", "search"),
 )
-def update_glacier_dropdown(country, selected_rgi):
-    dff = GLACIERS_DF if not country else GLACIERS_DF[GLACIERS_DF["country"] == country]
-    opts = []
-    for row in dff.itertuples(index=False):
-        label = f"{row.glac_name} ({row.rgi_id})" if str(row.glac_name).strip() else row.rgi_id
-        opts.append({"label": label, "value": row.rgi_id})
-
-    # choose value:
-    values = set(dff["rgi_id"].tolist())
-    if selected_rgi in values:
-        val = selected_rgi
-    elif opts:
-        val = opts[0]["value"]
-    else:
-        val = None
-    return opts, val
-
-
-
-
-
-
-@app.callback(
-    Output("search_suggestions", "options"),
-    Output("search_suggestions", "value"),
-    Input("search_query", "value"),
-)
-def update_search_suggestions(q):
-    # Suggestions come from the CSV-backed table (GLACIERS_DF): search across ALL selectable glaciers.
-    dff = GLACIERS_DF.copy()
-
-    # Robust string columns
-    dff["rgi_id"] = dff["rgi_id"].fillna("").astype(str)
-    dff["glac_name"] = dff["glac_name"].fillna("").astype(str)
-    if "country" in dff.columns:
-        dff["country"] = dff["country"].fillna("").astype(str)
-    else:
-        dff["country"] = ""
-
-    q = (q or "").strip().lower()
-
-    # If empty query: show a diverse sample across countries (not biased by CSV order)
-    if len(q) == 0:
-        pieces = []
-        for c, g in dff.groupby("country", sort=True):
-            # take a few per country
-            gg = g.sort_values(by=["glac_name", "rgi_id"]).head(380)
-            pieces.append(gg)
-        dff2 = (pd.concat(pieces, ignore_index=True) if pieces else dff).head(380)
-    else:
-        rgi_l = dff["rgi_id"].str.lower()
-        name_l = dff["glac_name"].str.lower()
-
-        contains = name_l.str.contains(q, na=False) | rgi_l.str.contains(q, na=False)
-        dff2 = dff[contains].copy()
-        if dff2.empty:
-            return [], None
-
-        # Rank: starts-with first, then shorter name
-        starts = (
-            dff2["glac_name"].str.lower().str.startswith(q, na=False)
-            | dff2["rgi_id"].str.lower().str.startswith(q, na=False)
-        )
-        dff2["_starts"] = starts.astype(int)
-        dff2["_name_len"] = dff2["glac_name"].str.len()
-
-        # Diverse top-N per country, then merge
-        pieces = []
-        for c, g in dff2.groupby("country", sort=True):
-            gg = g.sort_values(
-                by=["_starts", "_name_len", "glac_name", "rgi_id"],
-                ascending=[False, True, True, True],
-            ).head(380)
-            pieces.append(gg)
-
-        dff2 = (pd.concat(pieces, ignore_index=True) if pieces else dff2).head(380)
-        # final sort for nicer ordering
-        dff2 = dff2.sort_values(
-            by=["_starts", "country", "_name_len", "glac_name", "rgi_id"],
-            ascending=[False, True, True, True, True],
-        ).head(380)
-    opts = []
-    for row in dff2.itertuples(index=False):
-        base = f"{row.glac_name} ({row.rgi_id})" if str(row.glac_name).strip() else row.rgi_id
-        opts.append({"label": base, "value": row.rgi_id})
-
-    return opts, None
-
-
-
-
-
-
+def settings_from_url(search):
+    q = url_params(search)
+    scenario = q.get("scenario") if q.get("scenario") in SCENARIO_LABELS else "rcp_4_5"
+    var = q.get("property") if q.get("property") in VAR_TO_PROP else DEFAULT_VAR
+    metric = q.get("metric") if q.get("metric") in METRIC_OPTIONS else DEFAULT_METRIC
+    return scenario, var, metric
 
 
 @app.callback(
     Output("selected_rgi", "data"),
-    Output("dbg", "children"),
     Output("country_select", "value"),
+    Output("rgi_select", "options"),
+    Output("rgi_select", "value"),
+    Output("map_view", "data"),
+    Input("url", "search"),
+    Input("country_select", "value"),
     Input("globe", "clickData"),
     Input("rgi_select", "value"),
-    Input("search_suggestions", "value"),
     State("selected_rgi", "data"),
-    State("country_select", "value"),
-    prevent_initial_call=True,
+    State("map_view", "data"),
 )
-def select_rgi_from_click_or_dropdown(clickData, rgi_dropdown, rgi_search, current_rgi, current_country):
-    trig = (ctx.triggered[0]["prop_id"] if ctx.triggered else "")
+def select_glacier(search, country, click, rgi_dropdown, current_rgi, view):
+    """Single owner of the glacier selection (map click, dropdown, country filter, URL)."""
+    trig = ctx.triggered_id
+    rev = (view or {}).get("rev", 0) + 1
 
-    if trig == "globe.clickData":
-        if not clickData or not clickData.get("points"):
+    if trig == "globe":
+        rgi = ((click or {}).get("points") or [{}])[0].get("customdata")
+        if not rgi or rgi == current_rgi:
             raise PreventUpdate
-        rgi = clickData["points"][0].get("customdata")
-        if not rgi:
-            raise PreventUpdate
-        return rgi, f"Selected from map: {rgi}", current_country
+        # keep the country filter and the map view where the user put them
+        return rgi, country, no_update, rgi, no_update
 
-    if trig == "rgi_select.value":
-        if not rgi_dropdown:
+    if trig == "rgi_select":
+        if not rgi_dropdown or rgi_dropdown == current_rgi:
             raise PreventUpdate
-        return rgi_dropdown, f"Selected from dropdown: {rgi_dropdown}", current_country
+        return rgi_dropdown, country, no_update, rgi_dropdown, {"point": rgi_dropdown, "rev": rev}
 
-    if trig == "search_suggestions.value":
-        if not rgi_search:
-            raise PreventUpdate
-        # set country so overview + dropdown list filter to that country
-        try:
-            row = GLACIERS_DF.loc[GLACIERS_DF["rgi_id"] == rgi_search].iloc[0]
-            ctry = row["country"] if "country" in GLACIERS_DF.columns else current_country
-        except Exception:
-            ctry = current_country
-        return rgi_search, f"Selected from search: {rgi_search}", ctry
+    if trig == "country_select":
+        in_country = GLACIERS_DF if not country else GLACIERS_DF[GLACIERS_DF["country"] == country]
+        rgi = current_rgi if current_rgi in set(in_country["rgi_id"]) else in_country["rgi_id"].iloc[0]
+        return rgi, country, glacier_options(country), rgi, {"bounds": country, "rev": rev}
 
-    raise PreventUpdate
+    # initial load: glacier from the URL, else the default
+    rgi = url_params(search).get("glacier")
+    if rgi not in ALL_RGIS:
+        rgi = DEFAULT_RGI
+    country = country_of(rgi)
+    return rgi, country, glacier_options(country), rgi, {"bounds": country, "rev": rev}
+
 
 @app.callback(
     Output("globe", "figure"),
     Input("country_select", "value"),
     Input("selected_rgi", "data"),
+    Input("theme", "data"),
+    Input("map_view", "data"),
+    Input("globe_size", "data"),
 )
-def update_globe(country, selected_rgi):
+def update_globe(country, selected_rgi, theme, view, size):
     dff = GLACIERS_DF if not country else GLACIERS_DF[GLACIERS_DF["country"] == country]
-    return make_globe_fig(dff, selected_rgi)
+    view = view or {}
+    size = size or {"w": 600, "h": 400}
+    w, h = size.get("w") or 600, size.get("h") or 400
 
+    point = GLACIERS_DF[GLACIERS_DF["rgi_id"] == view.get("point")]
+    if not point.empty:
+        # glacier picked from the list: pan to it, zoomed in enough to find it
+        center, zoom = {"lat": float(point.cenlat.iloc[0]), "lon": float(point.cenlon.iloc[0])}, 8.0
+    else:
+        bounds = GLACIERS_DF if not view.get("bounds") else GLACIERS_DF[GLACIERS_DF["country"] == view["bounds"]]
+        center, zoom = fit_map_view(bounds["cenlat"], bounds["cenlon"], w, h)
 
+    return make_globe_fig(dff, selected_rgi, theme, center, zoom, uirevision=f"{view.get('rev', 0)}|{w}x{h}")
 
 
 # =========================
-# 3D UI controls (Top-down + Timelapse)
+# 3D UI controls (Top-down + Timelapse + year)
 # =========================
 @app.callback(
     Output("camera_mode", "data"),
+    Output("btn_topdown", "children"),
     Input("btn_topdown", "n_clicks"),
     State("camera_mode", "data"),
     prevent_initial_call=True,
 )
 def toggle_topdown(n, mode):
-    return "free" if mode == "topdown" else "topdown"
+    mode = "free" if mode == "topdown" else "topdown"
+    return mode, ("3D view" if mode == "topdown" else "2D map")
 
 
 @app.callback(
-    Output("timelapse_on", "data"),
     Output("timelapse_interval", "disabled"),
     Output("btn_timelapse", "children"),
     Input("btn_timelapse", "n_clicks"),
-    State("timelapse_on", "data"),
+    State("timelapse_interval", "disabled"),
     prevent_initial_call=True,
 )
-def toggle_timelapse(n, is_on):
-    is_on = not bool(is_on)
-    return is_on, (not is_on), ("⏸ Pause" if is_on else "▶ Timelapse")
+def toggle_timelapse(n, disabled):
+    playing = bool(disabled)  # it was stopped, so start it
+    return (not playing), ("⏸ Pause" if playing else "▶ Play")
 
 
 @app.callback(
     Output("year_slider", "value"),
+    Input("url", "search"),
     Input("timelapse_interval", "n_intervals"),
+    Input("glacier_timeseries", "clickData"),
     State("year_slider", "value"),
-    prevent_initial_call=True,
+    State("frame_year", "data"),
 )
-def advance_year(n_intervals, current_year):
-    if current_year not in YEARS:
-        return YEARS[0]
-    i = YEARS.index(current_year)
-    return YEARS[(i + 1) % len(YEARS)]
+def set_year(search, n_intervals, ts_click, current_year, frame_year):
+    trig = ctx.triggered_id
 
-def load_icemask_slice(nc_path: str, target_year: int, scenario_key: str, *args, **kwargs):
+    if trig == "timelapse_interval":
+        # only step once the previous frame has been drawn, so slow frames don't pile up
+        if frame_year is not None and frame_year != current_year:
+            raise PreventUpdate
+        i = YEARS.index(current_year) if current_year in YEARS else -1
+        return YEARS[(i + 1) % len(YEARS)]
+
+    if trig == "glacier_timeseries":
+        try:
+            x = float(ts_click["points"][0]["x"])
+        except Exception:
+            raise PreventUpdate
+        return int(min(max(round(x), YEARS[0]), YEARS[-1]))
+
+    try:
+        year = int(url_params(search).get("year", DEFAULT_YEAR))
+    except ValueError:
+        year = DEFAULT_YEAR
+    return year if year in YEARS else DEFAULT_YEAR
+
+
+# =========================
+# 3D data
+# =========================
+def load_icemask_slice(nc_path: str, target_year: int, scenario_key: str):
     """
     Return an ice mask slice for the given year/scenario.
 
     CORDEX 2D files often store time/x/y as (experiment, ...). This function
-    slices those consistently. It is also tolerant to extra args passed by
-    older call sites (ignored).
+    slices those consistently.
     """
     try:
         ds = open_nc_cached(nc_path)
@@ -1218,22 +1094,16 @@ def load_icemask_slice(nc_path: str, target_year: int, scenario_key: str, *args,
         return None
 
 
-
-# ---- Manual LRU cache for heavy 3D per-frame arrays (safe with list-like Dash inputs) ----
+# ---- Manual LRU cache for heavy 3D per-frame arrays ----
 _CACHED_3D_FIELDS = OrderedDict()
 # ~1 MB per entry at MAX_SIDE=220; 128 covers a full timelapse run for one glacier/scenario/property
 _CACHED_3D_FIELDS_MAX = int(os.environ.get("GLACIER_3D_CACHE_SIZE", "128"))
 _CACHED_3D_LOCK = threading.Lock()
 
-def _make_hashable(x):
-    if isinstance(x, (list, tuple)):
-        return tuple(_make_hashable(v) for v in x)
-    if isinstance(x, dict):
-        return tuple(sorted((k, _make_hashable(v)) for k, v in x.items()))
-    return x
 
-def _cached_3d_fields(rgi, scenario, var, target_year, max_side):
-    key = (_make_hashable(rgi), _make_hashable(scenario), _make_hashable(var), int(target_year), int(max_side))
+def _frame_fields(rgi, scenario, var, target_year):
+    """Downsampled, glacier-masked arrays for one frame (cached)."""
+    key = (str(rgi), str(scenario), str(var), int(target_year))
     with _CACHED_3D_LOCK:
         if key in _CACHED_3D_FIELDS:
             _CACHED_3D_FIELDS.move_to_end(key)
@@ -1246,86 +1116,36 @@ def _cached_3d_fields(rgi, scenario, var, target_year, max_side):
     with _NC_LOCK:
         (topg, usurf, prop_map, thk, xs, ys, ysel), source_path = choose_file_and_load(entry, str(scenario), str(var), int(target_year))
         icemask_full = load_icemask_slice(source_path, int(target_year), str(scenario))
-    source_file = os.path.basename(source_path)
 
     # downsample (CPU + WebGL payload)
-    topg_ds, xs_ds, ys_ds = downsample(topg, xs, ys, int(max_side))
-    usurf_ds, _, _        = downsample(usurf, xs, ys, int(max_side))
-    prop_ds,  _, _        = downsample(prop_map, xs, ys, int(max_side))
-    thk_ds,   _, _        = downsample(thk,   xs, ys, int(max_side))
+    topg_ds, xs_ds, ys_ds = downsample(topg, xs, ys, MAX_SIDE)
+    usurf_ds, _, _        = downsample(usurf, xs, ys, MAX_SIDE)
+    prop_ds,  _, _        = downsample(prop_map, xs, ys, MAX_SIDE)
+    thk_ds,   _, _        = downsample(thk, xs, ys, MAX_SIDE)
 
     # glacier mask: use *year-specific* thickness so vanished ice becomes holes
-    finite_thk = np.isfinite(thk_ds)
     eps = 0.5  # meters; increase if you want more aggressive "vanish" masking
-    thk_mask = finite_thk & (thk_ds > eps)
-
+    glacier_mask = np.isfinite(thk_ds) & (thk_ds > eps)
     if icemask_full is not None:
-        icemask_ds, _, _ = downsample(icemask_full, xs, ys, int(max_side))
-        ice_mask = np.isfinite(icemask_ds) & (icemask_ds > 0.5)
-        glacier_mask = thk_mask & ice_mask
-    else:
-        glacier_mask = thk_mask
-    usurf_glacier = np.where(glacier_mask, usurf_ds, np.nan)
-    prop_glacier  = np.where(glacier_mask, prop_ds,  np.nan)
+        icemask_ds, _, _ = downsample(icemask_full, xs, ys, MAX_SIDE)
+        glacier_mask &= np.isfinite(icemask_ds) & (icemask_ds > 0.5)
 
-    # defaults (masked: outside glacier -> NaN so it disappears)
-    if str(var) in ("mean_temp", "t2m", "temp"):
-        prop_field = np.where(glacier_mask, prop_ds, np.nan)
-        top_z      = usurf_glacier
-    else:
-        prop_field = prop_glacier
-        top_z      = usurf_glacier
-    # robust color limits
-    def _robust_limits(A, default_span=1.0):
-        finite = np.isfinite(A)
-        if not finite.any():
-            return 0.0, default_span
-        lo = float(np.nanpercentile(A[finite], 1))
-        hi = float(np.nanpercentile(A[finite], 99))
-        if (not np.isfinite(lo)) or (not np.isfinite(hi)) or (hi <= lo):
-            lo = float(np.nanmin(A[finite]))
-            hi = float(np.nanmax(A[finite]))
-        if (not np.isfinite(lo)) or (not np.isfinite(hi)) or (hi <= lo):
-            return 0.0, default_span
-        return lo, hi
-
-    extra_note = ""
-    colorscale = "Blues"
-    cmin, cmax = _robust_limits(prop_field, default_span=10.0)
-
-    # style by var
-    if str(var) == "smb":
-        colorscale = "RdBu"
-        cmin, cmax = -10.0, 10.0
-    elif str(var) in ("velsurf_mag", "velsurf"):
-        colorscale = "Magma"
-        cmin, cmax = _robust_limits(prop_field, default_span=1.0)
-    elif str(var) in ("mean_temp", "t2m", "temp"):
-        colorscale = "RdBu_r"
-        lo, hi = _robust_limits(prop_field, default_span=5.0)
-        vmax = max(abs(lo), abs(hi), 1.0)
-        cmin, cmax = -vmax, vmax
-    elif str(var) == "thk":
-        colorscale = "Blues"
-        lo, hi = _robust_limits(prop_field, default_span=10.0)
-        cmin, cmax = 0.0, max(hi, 0.1)
-
-    if (not np.isfinite(prop_field).any()) or not (cmax > cmin):
-        prop_field = usurf_glacier.copy()
-        colorscale = "Viridis"
-        cmin, cmax = _robust_limits(prop_field, default_span=1.0)
-        extra_note = " — (showing elevation: selected property missing/flat)"
-
-    # center coords (stable WebGL)
+    # center coords (stable WebGL); 1D axes are enough for go.Surface
     x_center = 0.5 * (float(xs_ds[0]) + float(xs_ds[-1]))
     y_center = 0.5 * (float(ys_ds[0]) + float(ys_ds[-1]))
-    # 1D axes are enough for go.Surface (x -> columns, y -> rows); no meshgrid needed
-    xs_l = np.asarray(xs_ds - x_center)
-    ys_l = np.asarray(ys_ds - y_center)
-
     bedrock = np.where(np.isfinite(topg_ds), topg_ds, np.nan)
 
-    res = (xs_l, ys_l, bedrock, top_z, prop_field, float(cmin), float(cmax), colorscale, source_file, extra_note, int(ysel))
+    res = {
+        "xs": np.asarray(xs_ds - x_center),
+        "ys": np.asarray(ys_ds - y_center),
+        "bedrock": bedrock,
+        # identifies the static part of the scene (grid + bedrock), see update_3d
+        "bedrock_key": hashlib.sha1(np.ascontiguousarray(bedrock, dtype=np.float32).tobytes()).hexdigest()[:16],
+        "top_z": np.where(glacier_mask, usurf_ds, np.nan),
+        "prop": np.where(glacier_mask, prop_ds, np.nan),
+        "source_file": os.path.basename(source_path),
+        "year": int(ysel),
+    }
     with _CACHED_3D_LOCK:
         _CACHED_3D_FIELDS[key] = res
         while len(_CACHED_3D_FIELDS) > _CACHED_3D_FIELDS_MAX:
@@ -1333,56 +1153,188 @@ def _cached_3d_fields(rgi, scenario, var, target_year, max_side):
     return res
 
 
+def _robust_limits(A, default_span=1.0):
+    finite = np.isfinite(A)
+    if not finite.any():
+        return 0.0, default_span
+    lo = float(np.nanpercentile(A[finite], 1))
+    hi = float(np.nanpercentile(A[finite], 99))
+    if (not np.isfinite(lo)) or (not np.isfinite(hi)) or (hi <= lo):
+        lo = float(np.nanmin(A[finite]))
+        hi = float(np.nanmax(A[finite]))
+    if (not np.isfinite(lo)) or (not np.isfinite(hi)) or (hi <= lo):
+        return 0.0, default_span
+    return lo, hi
+
+
+_COLOR_LIMITS: dict = {}
+_COLOR_LIMITS_LOCK = threading.Lock()
+
+
+def color_limits(rgi, var):
+    """
+    Colour range for a glacier + property, fixed over all years and scenarios
+    so colours stay comparable during a timelapse. Taken from the first year
+    and the last year of every scenario.
+    """
+    key = (str(rgi), str(var))
+    with _COLOR_LIMITS_LOCK:
+        if key in _COLOR_LIMITS:
+            return _COLOR_LIMITS[key]
+
+    samples = []
+    frames = [("rcp_4_5", YEARS[0])] + [(sc, YEARS[-1]) for sc in SCENARIO_LABELS]
+    for sc, year in frames:
+        try:
+            p = _frame_fields(rgi, sc, var, year)["prop"]
+        except Exception:
+            continue
+        samples.append(p[np.isfinite(p)])
+    values = np.concatenate(samples) if samples else np.array([])
+
+    if var == "smb":
+        limits = ("RdBu", -10.0, 10.0)
+    elif var in ("velsurf_mag", "velsurf"):
+        limits = ("Magma", *_robust_limits(values, default_span=1.0))
+    elif var in ("mean_temp", "t2m", "temp"):
+        lo, hi = _robust_limits(values, default_span=5.0)
+        vmax = max(abs(lo), abs(hi), 1.0)
+        limits = ("RdBu_r", -vmax, vmax)
+    elif var == "thk":
+        _, hi = _robust_limits(values, default_span=10.0)
+        limits = ("Blues", 0.0, max(hi, 0.1))
+    else:
+        limits = ("Blues", *_robust_limits(values, default_span=10.0))
+
+    with _COLOR_LIMITS_LOCK:
+        _COLOR_LIMITS[key] = limits
+    return limits
+
+
+BEDROCK_CS = [[0.0, "#303030"], [0.2, "#505050"], [0.5, "#808080"], [0.8, "#b8b8b8"], [1.0, "#d8d8d8"]]
+_SURF_Z_EPS = 2.0      # lift the ice surface slightly to avoid z-fighting with the bedrock
+TOP_TRACE_INDEX = 6    # base, 4 walls, bedrock, ice surface
+MAP_TRACE_INDEX = 1    # 2D map: hillshade, ice property, (contours)
+
+
+def hillshade(z, xs, ys, azimuth=315.0, altitude=45.0):
+    """Shaded relief (0..1) of an elevation grid, light from the north-west."""
+    zf = np.where(np.isfinite(z), z, np.nanmean(z) if np.isfinite(z).any() else 0.0)
+    dx = float(np.mean(np.diff(xs))) if len(xs) > 1 else 1.0
+    dy = float(np.mean(np.diff(ys))) if len(ys) > 1 else 1.0
+    dz_dy, dz_dx = np.gradient(zf, dy, dx)
+    slope = np.arctan(np.hypot(dz_dx, dz_dy))
+    aspect = np.arctan2(-dz_dx, dz_dy)
+    az, alt = math.radians(azimuth), math.radians(altitude)
+    shade = np.sin(alt) * np.cos(slope) + np.cos(alt) * np.sin(slope) * np.cos(az - aspect)
+    return np.clip(shade, 0.0, 1.0)
+
+
+def map2d_figure(f, prop_field, colorscale, cmin, cmax, property_label, show_iso, theme, rgi):
+    """Top-down map: shaded bedrock with the glacier coloured by the selected property."""
+    xs, ys, bedrock = f["xs"], f["ys"], f["bedrock"]
+    fig = go.Figure()
+    fig.add_trace(go.Heatmap(
+        x=xs, y=ys, z=hillshade(bedrock, xs, ys).astype(np.float32),
+        # mid-grey relief, so the ice (whose colour scales start near white) stands out
+        colorscale=[[0, "#1c1c1c"], [1, "#a8a8a8"]], zmin=0, zmax=1,
+        showscale=False, hoverinfo="skip", name="Terrain",
+    ))
+    # MAP_TRACE_INDEX: the only trace a year change updates
+    fig.add_trace(go.Heatmap(
+        x=xs, y=ys, z=prop_field.astype(np.float32),
+        colorscale=colorscale, zmin=cmin, zmax=cmax,
+        colorbar=dict(title=dict(text=property_label, side="right"), len=0.75, thickness=12, outlinewidth=0),
+        hovertemplate=f"{property_label}: %{{z:.1f}}<extra></extra>", name=property_label,
+    ))
+    if show_iso and np.isfinite(bedrock).any():
+        fig.add_trace(go.Contour(
+            x=xs, y=ys, z=bedrock.astype(np.float32),
+            contours=dict(coloring="lines", start=math.floor(np.nanmin(bedrock) / 200) * 200,
+                          end=math.ceil(np.nanmax(bedrock) / 200) * 200, size=200,
+                          showlabels=True, labelfont=dict(size=10, color="#ffffff")),
+            line=dict(width=1, color="rgba(255,255,255,0.6)"), colorscale=[[0, "#fff"], [1, "#fff"]],
+            showscale=False, hoverinfo="skip", name="Contours",
+        ))
+    hidden = dict(visible=False, showgrid=False, zeroline=False)
+    fig.update_layout(**base_layout(
+        theme,
+        uirevision=f"{rgi}|2d",
+        xaxis=dict(hidden, constrain="domain"),
+        yaxis=dict(hidden, scaleanchor="x", scaleratio=1, constrain="domain"),
+    ))
+    return fig
+
+
+def _surface_arrays(f, var):
+    """Ice-surface heights and colour values for a frame, plus how to colour them."""
+    colorscale, cmin, cmax = color_limits(f["_rgi"], var)
+    prop_field, note = f["prop"], ""
+    if (not np.isfinite(prop_field).any()) or not (cmax > cmin):
+        if np.isfinite(f["top_z"]).any():
+            prop_field = f["top_z"]
+            colorscale = "Viridis"
+            cmin, cmax = _robust_limits(prop_field, default_span=1.0)
+            note = " (showing elevation: property missing/flat)"
+    top_z = np.where(np.isfinite(f["top_z"]), f["top_z"] + _SURF_Z_EPS, np.nan)
+    return top_z, prop_field, colorscale, float(cmin), float(cmax), note
+
+
 @app.callback(
     Output("mnt_surface", "figure"),
     Output("surface_note", "children"),
+    Output("surface_note", "title"),
+    Output("surface_static", "data"),
+    Output("frame_year", "data"),
     Input("selected_rgi", "data"),
     Input("scenario", "value"),
     Input("property", "value"),
     Input("year_slider", "value"),
     Input("toggle_isohypses", "value"),
     Input("camera_mode", "data"),
+    Input("theme", "data"),
+    State("surface_static", "data"),
 )
-def update_3d(rgi, scenario, property_label, target_year, show_iso_values, camera_mode):
-    # ---- Normalize Dash list-like inputs (Checklist / multi-dropdown) ----
-    def _first(x, default=None):
-        if isinstance(x, (list, tuple)):
-            return x[0] if len(x) else default
-        return x
+def update_3d(rgi, scenario, var, target_year, show_iso_values, camera_mode, theme, shown_static):
+    if not rgi or var not in VAR_TO_PROP or not scenario:
+        return empty_fig(theme), "Pick a glacier", "", None, target_year
+    property_label = VAR_TO_PROP[var]
 
-    rgi = _first(rgi, default=rgi)
-    scenario = _first(scenario, default=scenario)
-    property_label = _first(property_label, default=property_label)
-    if not rgi:
-        return go.Figure(layout=go.Layout(title="Pick a glacier (RGI)")), ""
-
-    var = PROP_TO_VAR[property_label]
-
-
-    # Dash safety: always return a 2-tuple
-    # Heavy per-frame work is cached for smooth timelapse playback
     try:
-        xs_l, ys_l, bedrock, top_z, prop_field, cmin, cmax, colorscale, source_file, extra_note, ysel = _cached_3d_fields(
-            rgi, scenario, var, target_year, MAX_SIDE
-        )
+        f = dict(_frame_fields(rgi, scenario, var, target_year), _rgi=rgi)
+        top_z, prop_field, colorscale, cmin, cmax, extra_note = _surface_arrays(f, var)
     except Exception as e:
-        fig = go.Figure()
-        fig.update_layout(
-            title=f"3D Error: {type(e).__name__}: {e}",
-            paper_bgcolor="#000", plot_bgcolor="#000",
-        font=dict(color="#eaeaea", family=FONT_FAMILY),
-        )
-        return fig, f"Error loading frame: {repr(e)}"
-    
-    # isohypses on bedrock
+        return empty_fig(theme), f"Error loading frame: {type(e).__name__}: {e}", repr(e), None, target_year
+
     show_iso = isinstance(show_iso_values, (list, tuple)) and ("iso" in show_iso_values)
+    name = GLACIER_NAMES.get(str(rgi)) or str(rgi)
+    note = f"{name} · {SCENARIO_LABELS.get(scenario, scenario)} · {property_label} · {f['year']}{extra_note}"
+    hover = f"{rgi}\nSource file: {f['source_file']}"
+
+    # Everything except the ice surface is the same from year to year. If the browser
+    # already shows that, send only the new ice surface instead of the whole figure.
+    static = "|".join(map(str, (rgi, scenario, var, f["bedrock_key"], show_iso, camera_mode, theme, colorscale, cmin, cmax)))
+    if static == shown_static:
+        patch = Patch()
+        if camera_mode == "topdown":
+            patch["data"][MAP_TRACE_INDEX]["z"] = typed_array(prop_field)
+        else:
+            patch["data"][TOP_TRACE_INDEX]["z"] = typed_array(top_z)
+            patch["data"][TOP_TRACE_INDEX]["surfacecolor"] = typed_array(prop_field)
+        return patch, note, hover, static, target_year
+
+    if camera_mode == "topdown":
+        fig = map2d_figure(f, prop_field, colorscale, cmin, cmax, property_label, show_iso, theme, rgi)
+        return fig, note, hover, static, target_year
+
+    xs_l, ys_l, bedrock = f["xs"], f["ys"], f["bedrock"]
+
+    # isohypses on bedrock
     zmin_bed = float(np.nanmin(bedrock)) if np.isfinite(bedrock).any() else 0.0
     zmax_bed = float(np.nanmax(bedrock)) if np.isfinite(bedrock).any() else zmin_bed
     start    = (np.floor(zmin_bed/200.0)*200.0) if zmax_bed > zmin_bed else zmin_bed
     end      = (np.ceil( zmax_bed/200.0)*200.0) if zmax_bed > zmin_bed else zmax_bed
     contour_cfg_bed = dict(z=dict(show=show_iso, start=start, end=end, size=200, color="#ffffff", width=2))
-
-    BEDROCK_CS = [[0.0,"#303030"], [0.2,"#505050"], [0.5,"#808080"], [0.8,"#b8b8b8"], [1.0,"#d8d8d8"]]
 
     base_z = zmin_bed - max(50.0, 0.1 * (zmax_bed - zmin_bed))
 
@@ -1397,7 +1349,7 @@ def update_3d(rgi, scenario, property_label, target_year, show_iso_values, camer
         x=[x0, x1], y=[y0, y1], z=Zbase,
         surfacecolor=Zbase, colorscale=BEDROCK_CS,
         cmin=zmin_bed, cmax=zmax_bed,
-        showscale=False, opacity=1.0, name="Base"
+        showscale=False, opacity=1.0, name="Base", hoverinfo="skip",
     ))
 
     # walls
@@ -1407,9 +1359,8 @@ def update_3d(rgi, scenario, property_label, target_year, show_iso_values, camer
             x=x2d, y=y2d, z=Z,
             surfacecolor=Z, colorscale=BEDROCK_CS,
             cmin=zmin_bed, cmax=zmax_bed,
-            showscale=False, opacity=1.0, name="Wall"
+            showscale=False, opacity=1.0, name="Wall", hoverinfo="skip",
         ))
-
 
     add_wall(np.vstack([np.full_like(ys_l, x0), np.full_like(ys_l, x0)]), np.vstack([ys_l, ys_l]), bedrock[:, 0])
     add_wall(np.vstack([np.full_like(ys_l, x1), np.full_like(ys_l, x1)]), np.vstack([ys_l, ys_l]), bedrock[:, -1])
@@ -1418,20 +1369,18 @@ def update_3d(rgi, scenario, property_label, target_year, show_iso_values, camer
 
     # bedrock surface
     fig.add_trace(go.Surface(
-        x=xs_l, y=ys_l, z=bedrock, colorscale=BEDROCK_CS,
+        x=xs_l, y=ys_l, z=bedrock.astype(np.float32), colorscale=BEDROCK_CS,
         showscale=False, opacity=1.0, name="Bedrock",
-        contours=contour_cfg_bed
+        contours=contour_cfg_bed,
     ))
 
-    # top surface with small z offset to avoid z-fighting
-    _SURF_Z_EPS = 2.0
-    top_z_plot = np.where(np.isfinite(top_z), top_z + _SURF_Z_EPS, top_z)
-
+    # ice surface (TOP_TRACE_INDEX; the only trace a year change updates)
     fig.add_trace(go.Surface(
-        x=xs_l, y=ys_l, z=top_z_plot,
-        surfacecolor=prop_field, colorscale=colorscale,
-        cmin=cmin, cmax=cmax, colorbar=dict(title=property_label, len=0.8),
-        opacity=1.0, name=f"{property_label}"
+        x=xs_l, y=ys_l, z=top_z.astype(np.float32),
+        surfacecolor=prop_field.astype(np.float32), colorscale=colorscale,
+        cmin=cmin, cmax=cmax,
+        colorbar=dict(title=dict(text=property_label, side="right"), len=0.75, thickness=12, outlinewidth=0),
+        opacity=1.0, name=property_label,
     ))
 
     # edge labels for isohypses
@@ -1474,171 +1423,119 @@ def update_3d(rgi, scenario, property_label, target_year, show_iso_values, camer
         yaxis=dict(visible=False),
         zaxis=dict(visible=False),
         aspectmode="data",
-        uirevision=f"{rgi}|{scenario}|{property_label}",
+        uirevision=f"{rgi}|{scenario}|{var}",
     )
     if ann:
         scene_cfg["annotations"] = ann
 
-    fig.update_layout(
-        title=f"{rgi} — {SCENARIO_LABELS.get(scenario, scenario)} — {property_label} @ {ysel}{extra_note}",
-        scene=scene_cfg,
-        paper_bgcolor="#000",
-        plot_bgcolor="#000",
-        font=dict(color="#eaeaea", size=14, family=FONT_FAMILY),
-        margin=dict(l=0, r=0, t=36, b=0),
-    )
+    fig.update_layout(**base_layout(theme, scene=scene_cfg))
 
-    if camera_mode == "topdown":
-        fig.update_layout(scene_camera=dict(
-            eye=dict(x=0.0, y=0.0, z=2.5),
-            up=dict(x=0, y=1, z=0),
-        ))
+    return fig, note, hover, static, target_year
 
-    note = f"Source file: {source_file}"
-    return fig, note
 
 # =========================
 # Timeseries
 # =========================
+def year_marker(year, theme):
+    return [dict(type="line", xref="x", yref="paper", x0=year, x1=year, y0=0, y1=1,
+                 line=dict(color=theme_of(theme)["fg"], width=1, dash="dot"), opacity=0.6)]
+
+
 @app.callback(
     Output("glacier_timeseries", "figure"),
     Input("selected_rgi", "data"),
     Input("metric_var_select", "value"),
+    Input("scenario", "value"),
+    Input("theme", "data"),
+    State("year_slider", "value"),
 )
-def update_timeseries(rgi, metric_var):
+def update_timeseries(rgi, metric_var, scenario, theme, year):
     """
     Plot metrics over time for the selected glacier:
-      - CORDEX RCPs (rcp_2_6, rcp_4_5, rcp_8_5) as 3 colored lines
+      - CORDEX RCPs (rcp_2_6, rcp_4_5, rcp_8_5) as 3 colored lines (selected scenario emphasised)
       - optional historical W5E5 as a grey dotted line (if present in the CSV)
+      - a dotted marker at the year shown in the 3D view
     Uses METRICS_DF loaded from METRICS_TABLE_PATH.
     """
-    fig = go.Figure()
+    t = theme_of(theme)
 
-    if not rgi:
-        fig.update_layout(
-            paper_bgcolor="#000", plot_bgcolor="#000",
-        font=dict(color="#eaeaea", family=FONT_FAMILY),
-            margin={"l": 10, "r": 10, "t": 10, "b": 10},
+    def message(text):
+        return go.Figure(layout=base_layout(
+            theme,
             xaxis={"visible": False},
             yaxis={"visible": False},
-            annotations=[{"text": "Select a glacier to see metrics.", "xref": "paper", "yref": "paper", "x": 0.5, "y": 0.5, "showarrow": False}],
-        )
-        return fig
+            annotations=[{"text": text, "xref": "paper", "yref": "paper", "x": 0.5, "y": 0.5, "showarrow": False}],
+        ))
 
+    if not rgi or not metric_var:
+        return message("Select a glacier to see metrics.")
     if METRICS_DF is None or len(METRICS_DF) == 0:
-        fig.update_layout(
-            paper_bgcolor="#000", plot_bgcolor="#000",
-        font=dict(color="#eaeaea", family=FONT_FAMILY),
-            margin={"l": 10, "r": 10, "t": 10, "b": 10},
-            xaxis={"visible": False},
-            yaxis={"visible": False},
-            annotations=[{"text": f"No metrics table loaded. Expected: {METRICS_TABLE_PATH}", "xref": "paper", "yref": "paper", "x": 0.5, "y": 0.5, "showarrow": False}],
-        )
-        return fig
-
+        return message(f"No metrics table loaded. Expected: {METRICS_TABLE_PATH}")
     if metric_var not in METRICS_DF.columns:
-        fig.update_layout(
-            paper_bgcolor="#000", plot_bgcolor="#000",
-        font=dict(color="#eaeaea", family=FONT_FAMILY),
-            margin={"l": 10, "r": 10, "t": 10, "b": 10},
-            xaxis={"visible": False},
-            yaxis={"visible": False},
-            annotations=[{"text": f"Metric '{metric_var}' not found in table.", "xref": "paper", "yref": "paper", "x": 0.5, "y": 0.5, "showarrow": False}],
-        )
-        return fig
+        return message(f"Metric '{metric_var}' not found in table.")
 
     d = METRICS_DF[METRICS_DF["rgi_id"] == str(rgi)].copy()
     d = d.dropna(subset=["year"])
     if len(d) == 0:
-        fig.update_layout(
-            paper_bgcolor="#000", plot_bgcolor="#000",
-        font=dict(color="#eaeaea", family=FONT_FAMILY),
-            margin={"l": 10, "r": 10, "t": 10, "b": 10},
-            xaxis={"visible": False},
-            yaxis={"visible": False},
-            annotations=[{"text": "No rows for this glacier in the metrics table.", "xref": "paper", "yref": "paper", "x": 0.5, "y": 0.5, "showarrow": False}],
-        )
-        return fig
+        return message("No rows for this glacier in the metrics table.")
 
-    # Scenario colors: hottest is light red, then orange, then yellow
-    rcp_colors = {
-        "rcp_2_6": "rgba(204,163,0,0.95)",  # dark yellow
-        "rcp_4_5": "rgba(255,140,0,0.95)",  # light orange
-        "rcp_8_5": "rgba(255,102,102,0.9)",  # light red
-    }
+    fig = go.Figure()
 
     # Historical (W5E5) if present
     if "source" in d.columns:
         dh = d[d["source"].str.lower().eq("w5e5")].sort_values("year")
         if len(dh) > 0:
-            fig.add_trace(
-                go.Scatter(
-                    x=dh["year"],
-                    y=dh[metric_var],
-                    mode="lines+markers",
-                    name="W5E5 (historical)",
-                    line={"dash": "dot", "width": 2, "color": "rgba(180,180,180,0.9)"},
-                    marker={"size": 5},
-                )
-            )
+            fig.add_trace(go.Scatter(
+                x=dh["year"], y=dh[metric_var],
+                mode="lines", name="Historical",
+                line={"dash": "dot", "width": 2, "color": t["hist"]},
+            ))
 
     # CORDEX scenarios
-    if "source" in d.columns:
-        dc = d[d["source"].str.lower().eq("cordex")].copy()
-    else:
-        dc = d.copy()
+    dc = d[d["source"].str.lower().eq("cordex")].copy() if "source" in d.columns else d.copy()
 
     if "experiment" in dc.columns:
-        for exp in ["rcp_2_6", "rcp_4_5", "rcp_8_5"]:
+        for exp in SCENARIO_LABELS:
             de = dc[dc["experiment"].str.lower().eq(exp)].sort_values("year")
             if len(de) == 0:
                 continue
-            fig.add_trace(
-                go.Scatter(
-                    x=de["year"],
-                    y=de[metric_var],
-                    mode="lines+markers",
-                    name=exp.upper().replace("_", "."),
-                    line={"width": 2.5, "color": rcp_colors.get(exp, None)},
-                    marker={"size": 5},
-                )
-            )
+            selected = exp == scenario
+            fig.add_trace(go.Scatter(
+                x=de["year"], y=de[metric_var],
+                mode="lines", name=SCENARIO_LABELS[exp],
+                line={"width": 3 if selected else 1.5, "color": t["rcp"][exp]},
+                opacity=1.0 if selected else 0.55,
+            ))
     else:
         # If experiment column is missing, just plot a single line
         dc = dc.sort_values("year")
-        fig.add_trace(
-            go.Scatter(
-                x=dc["year"],
-                y=dc[metric_var],
-                mode="lines+markers",
-                name="Scenario",
-                line={"width": 2.5},
-                marker={"size": 5},
-            )
-        )
+        fig.add_trace(go.Scatter(x=dc["year"], y=dc[metric_var], mode="lines", name="Scenario", line={"width": 2.5}))
 
-    # Labels
-    y_labels = {
-        "volume_km3": "Volume (km³)",
-        "area_km2": "Area (km²)",
-        "thk_mean_m": "Mean thickness (m)",
-        "smb_mean": "SMB mean",
-        "vel_mean": "Velocity mean",
-    }
-    fig.update_layout(
-        paper_bgcolor="#000", plot_bgcolor="#000",
-        font=dict(color="#eaeaea", family=FONT_FAMILY),
-        margin={"l": 40, "r": 10, "t": 10, "b": 30},
-        legend={"orientation": "h", "yanchor": "bottom", "y": 1.02, "xanchor": "left", "x": 0.0,
-                "font": {"family": FONT_FAMILY, "color": "#eaeaea"}},
-        xaxis={"title": {"text": "Year", "font": {"family": FONT_FAMILY, "color": "#eaeaea"}},
-               "showgrid": True, "gridcolor": "#222", "zeroline": False,
-               "tickfont": {"family": FONT_FAMILY, "color": "#eaeaea"}},
-        yaxis={"title": {"text": y_labels.get(metric_var, metric_var), "font": {"family": FONT_FAMILY, "color": "#eaeaea"}},
-               "showgrid": True, "gridcolor": "#222", "zeroline": False,
-               "tickfont": {"family": FONT_FAMILY, "color": "#eaeaea"}},
-    )
+    axis = {"showgrid": True, "gridcolor": t["grid"], "zeroline": False, "linecolor": t["grid"]}
+    fig.update_layout(**base_layout(
+        theme,
+        margin={"l": 8, "r": 14, "t": 6, "b": 8},
+        hovermode="x unified",
+        showlegend=False,  # legend is HTML above the chart (.ts-legend), so it can wrap
+        # tick spacing is left to plotly so narrow charts get fewer labels;
+        # no y-axis title because the metric dropdown right above names it
+        xaxis={**axis, "automargin": True, "range": [YEARS[0] - 2, YEARS[-1] + 2], "tickangle": 0},
+        yaxis={**axis, "automargin": True},
+        shapes=year_marker(year, theme),
+    ))
     return fig
+
+
+@app.callback(
+    Output("glacier_timeseries", "figure", allow_duplicate=True),
+    Input("year_slider", "value"),
+    State("theme", "data"),
+    prevent_initial_call=True,
+)
+def move_year_marker(year, theme):
+    patch = Patch()
+    patch["layout"]["shapes"] = year_marker(year, theme)
+    return patch
 
 
 if __name__ == "__main__":
