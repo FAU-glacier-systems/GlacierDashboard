@@ -1,0 +1,35 @@
+[Unit]
+Description=Glacier Evolution Dashboard (Dash via gunicorn)
+After=network.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/dashboard_korbi/code
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/ubuntu/dashboard-venv/bin/gunicorn --config /home/ubuntu/dashboard_korbi/deploy/gunicorn.conf.py glacier_dashboard_alps:server
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=always
+RestartSec=5
+KillMode=mixed
+TimeoutStopSec=30
+
+# Resource limits (machine has ~3.8 GB RAM, no swap)
+MemoryHigh=1500M
+MemoryMax=2G
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=truenow there 
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

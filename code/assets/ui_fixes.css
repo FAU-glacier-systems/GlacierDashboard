@@ -1,0 +1,88 @@
+
+/* =========================================================
+   Force dropdown selected value + input text BLACK
+   (covers multiple react-select versions / hashed classnames)
+   ========================================================= */
+
+/* Make control background white so black text is readable */
+#metric_var_select .Select-control,
+#metric_var_select .select__control,
+#metric_var_select [class*="control"],
+.dropdown-black .Select-control,
+.dropdown-black .select__control,
+.dropdown-black [class*="control"] {
+  background-color: #fff !important;
+}
+
+/* Selected value text */
+#metric_var_select .Select-value-label,
+#metric_var_select .Select-value,
+#metric_var_select .select__single-value,
+#metric_var_select [class*="singleValue"],
+#metric_var_select [class*="SingleValue"],
+#metric_var_select [class*="ValueContainer"] div,
+#metric_var_select [class*="valueContainer"] div,
+#metric_var_select .css-1dimb5e-singleValue,
+#metric_var_select .css-qc6sy-singleValue,
+.dropdown-black .Select-value-label,
+.dropdown-black .Select-value,
+.dropdown-black .select__single-value,
+.dropdown-black [class*="singleValue"],
+.dropdown-black [class*="SingleValue"],
+.dropdown-black [class*="ValueContainer"] div,
+.dropdown-black [class*="valueContainer"] div {
+  color: #000 !important;
+}
+
+/* Placeholder + typed text */
+#metric_var_select .Select-placeholder,
+#metric_var_select .select__placeholder,
+#metric_var_select [class*="placeholder"],
+#metric_var_select .Select-input input,
+#metric_var_select .select__input input,
+#metric_var_select input,
+.dropdown-black .Select-placeholder,
+.dropdown-black .select__placeholder,
+.dropdown-black [class*="placeholder"],
+.dropdown-black input {
+  color: #000 !important;
+}
+
+/* Menu options */
+#metric_var_select .Select-menu-outer,
+#metric_var_select .Select-option,
+#metric_var_select .VirtualizedSelectOption,
+#metric_var_select .select__menu,
+#metric_var_select .select__option,
+.dropdown-black .Select-menu-outer,
+.dropdown-black .Select-option,
+.dropdown-black .VirtualizedSelectOption,
+.dropdown-black .select__menu,
+.dropdown-black .select__option {
+  color: #000 !important;
+  background-color: #fff !important;
+}
+
+/* Focused/selected option background (keep readable) */
+#metric_var_select .is-focused,
+#metric_var_select .is-selected,
+#metric_var_select .select__option--is-focused,
+#metric_var_select .select__option--is-selected,
+.dropdown-black .is-focused,
+.dropdown-black .is-selected,
+.dropdown-black .select__option--is-focused,
+.dropdown-black .select__option--is-selected {
+  background-color: #f0f0f0 !important;
+  color: #000 !important;
+}
+
+/* =========================================================
+   Slider tooltip (selected year) text BLACK
+   ========================================================= */
+#year_slider .rc-slider-tooltip-inner,
+#year_slider [class*="rc-slider-tooltip-inner"],
+.slider-black-tooltip .rc-slider-tooltip-inner,
+.slider-black-tooltip [class*="rc-slider-tooltip-inner"] {
+  color: #000 !important;
+  background: #fff !important;
+}
