@@ -252,3 +252,16 @@ html[data-theme="dark"] .logo-fau { filter: brightness(0) invert(0.9); }
 @media (orientation: portrait) and (max-width: 719px) {
   .year { flex-basis: 100%; }
 }
+
+/* ---------- Legal links and pages (legal.py) ---------- */
+.legal-links { display: flex; flex-wrap: wrap; gap: 2px 12px; width: 100%; font-size: 11px; }
+.legal-links a { color: var(--muted); text-decoration: none; }
+.legal-links a:hover { color: var(--fg); text-decoration: underline; }
+
+body.legal-page { overflow: auto; }
+.legal { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; line-height: 1.55; }
+.legal h1 { font-size: 22px; margin: 16px 0 8px; }
+.legal h2 { font-size: 15px; margin: 24px 0 6px; }
+.legal p, .legal ul { margin: 0 0 10px; }
+.legal a { color: var(--accent); }
+.legal .legal-links { margin-top: 32px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; }

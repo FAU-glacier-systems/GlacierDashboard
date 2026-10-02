@@ -11,6 +11,8 @@ from dash import Dash, dcc, html, Input, Output, State, Patch, ctx, no_update
 from dash.exceptions import PreventUpdate
 import plotly.graph_objects as go
 
+import legal
+
 
 # =========================
 # Paths (relative to /code)
@@ -52,22 +54,45 @@ else:
 # =========================
 FONT_FAMILY = "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
 
+# OpenTopoMap tiles go through the nginx proxy (deploy/nginx-site.conf), so visitors' browsers never contact a third party.
+OTM_TILES = os.environ.get("OTM_TILE_URL", "https://www.glacier-evolution.nat.fau.de/tiles/otm").rstrip("/")
+
+
+def otm_style(dim=False):
+    """MapLibre style for the OpenTopoMap raster basemap (relief shading included), rendered in greyscale;
+    dim=True darkens it for the dark theme."""
+    paint = {"raster-saturation": -1}
+    if dim:
+        paint.update({"raster-brightness-max": 0.55, "raster-contrast": 0.15})
+    else:
+        paint.update({"raster-brightness-min": 0.3, "raster-contrast": -0.15})
+    return {
+        "version": 8,
+        "sources": {"otm": {
+            "type": "raster",
+            "tiles": [f"{OTM_TILES}/{{z}}/{{x}}/{{y}}.png"],
+            "tileSize": 256,
+            "maxzoom": 17,
+            "attribution": '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors, SRTM | '
+                           'Map style: © <a href="https://opentopomap.org" target="_blank">OpenTopoMap</a> '
+                           '(<a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank">CC-BY-SA</a>)',
+        }},
+        "layers": [{"id": "otm", "type": "raster", "source": "otm", "paint": paint}],
+    }
+
+
 # Figure colours per UI theme (page colours are in assets/style.css)
 THEMES = {
     "dark": {
         "fg": "#e6e6e6", "grid": "#262626",
-        "map_style": "carto-darkmatter",
-        "hillshade": "https://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade_Dark/MapServer/tile/{z}/{y}/{x}",
-        "hillshade_opacity": 0.75,
+        "map_style": otm_style(dim=True),
         "marker": "#7dd3fc",
         "rcp": {"rcp_2_6": "#e3b505", "rcp_4_5": "#ff8c00", "rcp_8_5": "#ff6b6b"},
         "hist": "#a3a3a3",
     },
     "light": {
         "fg": "#1a1a1a", "grid": "#e8e8e8",
-        "map_style": "carto-positron",
-        "hillshade": "https://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}",
-        "hillshade_opacity": 0.45,
+        "map_style": otm_style(dim=False),
         "marker": "#0369a1",
         "rcp": {"rcp_2_6": "#b58900", "rcp_4_5": "#e06c00", "rcp_8_5": "#d62828"},
         "hist": "#737373",
@@ -594,7 +619,7 @@ def fit_map_view(lats, lons, width, height, max_zoom=9.0):
 
 
 def make_globe_fig(dff: pd.DataFrame, selected_rgi, theme, center, zoom, uirevision):
-    """Overview map: glacier markers on a hillshade basemap."""
+    """Overview map: glacier markers on the OpenTopoMap basemap."""
     t = theme_of(theme)
     fig = go.Figure()
 
@@ -629,12 +654,6 @@ def make_globe_fig(dff: pd.DataFrame, selected_rgi, theme, center, zoom, uirevis
             style=t["map_style"],
             center=center,
             zoom=zoom,
-            layers=[dict(
-                sourcetype="raster",
-                source=[t["hillshade"]],
-                below="traces",
-                opacity=t["hillshade_opacity"],
-            )],
         ),
     ))
     return fig
@@ -674,6 +693,7 @@ app = Dash(
     index_string=INDEX_STRING,
 )
 server = app.server  # WSGI entry point for gunicorn
+legal.register(server, app.get_asset_url("style.css"))  # /impressum, /datenschutz, /barrierefreiheit
 
 LOGO_FAU = "Friedrich-Alexander-Universität_Erlangen-Nürnberg_Logo_07.2022.svg.png"
 LOGO_ERC = "LOGO_ERC-FLAG_EU-no text.png"
@@ -694,6 +714,7 @@ def logos(class_name):
                  alt="Friedrich-Alexander-Universität Erlangen-Nürnberg"),
         html.Img(src=app.get_asset_url(LOGO_ERC), className="logo-erc",
                  alt="Funded by the European Union · European Research Council"),
+        legal.legal_links(),
     ])
 
 
