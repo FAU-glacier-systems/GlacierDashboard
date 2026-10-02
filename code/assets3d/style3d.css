@@ -1,0 +1,114 @@
+/* 3D test layout, loaded after assets/style.css: the map fills the window, everything else floats on it. */
+.app3d { position: fixed; inset: 0; overflow: hidden; background: var(--bg); }
+#map3d { position: absolute; inset: 0; }
+#map3d .maplibregl-canvas { outline: none; }
+
+.float {
+  position: absolute;
+  z-index: 2;
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+}
+
+/* Settings, top left */
+.float-ctrl {
+  top: 12px; left: 12px; width: 300px;
+  max-height: calc(100% - 110px);
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 10px 12px;
+}
+.float-head { display: flex; align-items: flex-start; gap: 6px; }
+.float-head > div { flex: 1 1 auto; min-width: 0; }
+.float-head h1 { font-size: 14px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.float-head p { font-size: 12px; margin-top: 2px; }
+.float-body { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; min-height: 0; }
+.float-body .fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.float-ctrl.is-collapsed .float-body { display: none; }
+
+/* Glacier search styled as the subtitle */
+.title-select.dash-dropdown, .title-select .dash-dropdown {
+  border: 0; background: transparent; box-shadow: none; padding: 0; min-height: 0; height: auto;
+  font-size: 12px; color: var(--muted); width: 100%; cursor: pointer;
+}
+.title-select .dash-dropdown-value { color: var(--fg); }
+.title-select .dash-dropdown-placeholder { color: var(--muted); }
+.title-select:hover .dash-dropdown-value, .title-select:hover .dash-dropdown-placeholder { text-decoration: underline; }
+.title-select .dash-dropdown-trigger-icon { width: 12px; height: 12px; opacity: 0.7; }
+
+/* Colour bar = property switch */
+.cbar-btn { cursor: pointer; border-radius: 6px; padding: 3px 4px; margin: -3px -4px; }
+.cbar-btn:hover, .cbar-btn:focus-visible { background: var(--hover); outline: none; }
+.cbar-btn .cbar-label::after { content: " ▾"; color: var(--muted); }
+.prop-menu { display: grid; gap: 4px; margin-top: -4px; }
+.prop-menu.is-hidden { display: none; }
+.prop-opt {
+  display: grid; gap: 3px; text-align: left; font: inherit; font-size: 12px; color: var(--fg);
+  background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; cursor: pointer;
+}
+.prop-opt:hover { background: var(--hover); }
+.prop-opt-ramp { display: block; height: 6px; border-radius: 3px; }
+
+/* Colour bar (stays visible when the settings are folded away) */
+.cbar { display: grid; gap: 3px; font-size: 11px; }
+.cbar-ramp { height: 8px; border-radius: 3px; border: 1px solid var(--line); }
+.cbar-ticks { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); }
+.cbar-label { color: var(--fg); }
+.hint { font-size: 12px; line-height: 1.4; }
+.float-ctrl .logos-side { margin-top: 2px; }
+.float-ctrl .legal-links { display: none; }   /* shown in the corner instead */
+
+/* Chart inside the settings panel */
+.chart-block { display: flex; flex-direction: column; gap: 4px; }
+.chart-head { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.chart-head > span { flex: 1 1 auto; }
+.chart-head .head-select { flex: 0 0 140px; margin-left: 0; }
+.chart-block .ts-legend { font-size: 11px; gap: 2px 10px; }
+.chart-block .chart { height: 170px; }
+.chart-block .chart > div, .chart-block .graph { height: 100%; }
+
+/* Toolbar, bottom */
+.map-toolbar {
+  left: 12px; right: 12px; bottom: 26px;
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 10px;
+}
+.map-toolbar .year { flex: 1 1 auto; min-width: 160px; }
+
+/* Funding logos, always visible under the toolbar on the right */
+.logo-corner { position: absolute; z-index: 2; right: 14px; bottom: 3px; display: flex; gap: 8px; align-items: center; }
+.logo-corner img { height: 18px; width: auto; display: block; }
+html[data-theme="dark"] .logo-corner .logo-fau { filter: brightness(0) invert(0.9); }
+
+/* Legal links, always visible under the toolbar */
+.legal-corner { position: absolute; z-index: 2; left: 14px; bottom: 4px; }
+.legal-corner .legal-links { width: auto; font-size: 11px; }
+.legal-corner .legal-links a { color: var(--muted); text-shadow: 0 0 3px var(--bg); }
+
+/* MapLibre controls and popups in both themes */
+.app3d .maplibregl-popup-content { background: var(--bg); color: var(--fg); padding: 4px 8px; font-size: 12px;
+                            border: 1px solid var(--line); }
+.app3d .maplibregl-popup-tip { display: none; }
+.app3d .maplibregl-ctrl-attrib { font-size: 9px; line-height: 1.3; }
+html[data-theme="dark"] .maplibregl-ctrl-group { background: #1a1a1a; }
+html[data-theme="dark"] .maplibregl-ctrl-group button + button { border-top-color: #333; }
+html[data-theme="dark"] .maplibregl-ctrl-group .maplibregl-ctrl-icon { filter: invert(1); }
+
+/* Narrow screens: settings full width, folded by default via the gear button; toolbar wraps */
+@media (max-width: 640px) {
+  .float-ctrl, .float-ctrl.is-collapsed { left: 8px; right: 8px; top: 8px; width: auto; }
+  .map-toolbar { left: 8px; right: 8px; flex-wrap: wrap; }
+  .map-toolbar .year { order: 3; flex-basis: 100%; }
+  .hint { display: none; }
+}
+
+/* Phones: legal links and logos share the strip under the toolbar */
+@media (max-width: 640px) {
+  .legal-corner { left: 8px; }
+  .legal-corner .legal-links { font-size: 10px; gap: 2px 8px; }
+  .logo-corner { right: 8px; gap: 6px; }
+  .logo-corner img { height: 13px; }
+}

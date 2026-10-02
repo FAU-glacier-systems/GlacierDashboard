@@ -13,3 +13,4 @@ _backup/
 venv/
 __pycache__/
 *.pyc
+data/glacier_store/

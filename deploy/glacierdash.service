@@ -1,5 +1,5 @@
 [Unit]
-Description=Glacier Evolution Dashboard (Dash via gunicorn)
+Description=Glacier Evolution Dashboard, 3D (Dash via gunicorn)
 After=network.target
 
 [Service]
@@ -9,11 +9,13 @@ User=ubuntu
 Group=ubuntu
 WorkingDirectory=/home/ubuntu/dashboard/code
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/home/ubuntu/dashboard-venv/bin/gunicorn --config /home/ubuntu/dashboard/deploy/gunicorn.conf.py glacier_dashboard_alps:server
+ExecStart=/home/ubuntu/dashboard-venv/bin/gunicorn --config /home/ubuntu/dashboard/deploy/gunicorn.conf.py glacier_dashboard_3d:server
 ExecReload=/bin/kill -s HUP $MAINPID
 Restart=always
 RestartSec=5
 KillMode=mixed
+# the 3D app memory-maps one file per glacier (plus its properties on demand): more than the default 1024
+LimitNOFILE=8192
 TimeoutStopSec=30
 
 # Resource limits (machine has ~3.8 GB RAM, no swap)
@@ -25,9 +27,11 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
+# the 3D app caches terrain tiles here (the home directory is otherwise read-only)
+ReadWritePaths=/home/ubuntu/.cache/glacier3d
 ProtectKernelTunables=true
 ProtectKernelModules=true
-ProtectControlGroups=truenow there 
+ProtectControlGroups=true 
 RestrictSUIDSGID=true
 LockPersonality=true
 

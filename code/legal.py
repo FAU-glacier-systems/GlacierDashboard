@@ -47,9 +47,13 @@ E-Mail: <a href="mailto:poststelle@stmwk.bayern.de">poststelle@stmwk.bayern.de</
 <p>Gletscherumrisse: RGI 7.0 Consortium (2023): Randolph Glacier Inventory – A Dataset of Global Glacier
 Outlines, Version 7.0. NSIDC, <a href="https://doi.org/10.5067/f6jmovy5navz">doi:10.5067/f6jmovy5navz</a>
 (<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>).</p>
-<p>Hintergrundkarte: Kartendaten © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende,
-SRTM; Kartendarstellung © <a href="https://opentopomap.org">OpenTopoMap</a>
-(<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>).</p>
+<p>Geländemodell: <a href="https://registry.opendata.aws/terrain-tiles/">Terrain Tiles</a> (Mapzen,
+AWS Open Data) aus SRTM, GMTED2010, ETOPO1 und EU-DEM, ergänzt um das Gletscherbett aus den Modellrechnungen.
+Enthält: Produced using Copernicus data and information funded by the European Union – EU-DEM layers;
+© offene Daten Österreichs – Digitales Geländemodell (DGM) Österreich
+(<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>).
+<a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md">Vollständige Quellenangaben</a>.</p>
+<p>Kartenbibliothek: <a href="https://maplibre.org">MapLibre GL JS</a> (BSD-3-Clause).</p>
 <p>Gefördert durch die Europäische Union (Europäischer Forschungsrat, ERC). Die geäußerten Ansichten und
 Meinungen sind ausschließlich die der Autorinnen und Autoren und spiegeln nicht unbedingt die der
 Europäischen Union oder des Europäischen Forschungsrats wider.</p>
@@ -80,8 +84,9 @@ mit anderen Daten zusammengeführt.</p>
 Die Logdateien werden nach 14 Tagen automatisch gelöscht.</p>
 
 <h2>Kartendienste</h2>
-<p>Die Hintergrundkarte von OpenTopoMap wird über unseren eigenen Server abgerufen und dort
-zwischengespeichert. Dabei werden keine Daten über Sie an OpenTopoMap oder andere Dritte übermittelt.</p>
+<p>Das Geländemodell (Terrain Tiles, bereitgestellt über Amazon Web Services) ruft unser eigener Server ab
+und speichert es zwischen; die Kartenbibliothek MapLibre liefern wir selbst aus. Ihr Browser lädt alle Inhalte
+dieser Website von unserem Server. Dabei werden keine Daten über Sie an Dritte übermittelt.</p>
 
 <h2>Lokaler Speicher, Cookies</h2>
 <p>Diese Website setzt keine Cookies und verwendet keine Analyse- oder Tracking-Dienste. Die gewählte
