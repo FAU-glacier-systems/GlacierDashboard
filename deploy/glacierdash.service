@@ -7,9 +7,9 @@ Type=notify
 NotifyAccess=main
 User=ubuntu
 Group=ubuntu
-WorkingDirectory=/home/ubuntu/dashboard_korbi/code
+WorkingDirectory=/home/ubuntu/dashboard/code
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/home/ubuntu/dashboard-venv/bin/gunicorn --config /home/ubuntu/dashboard_korbi/deploy/gunicorn.conf.py glacier_dashboard_alps:server
+ExecStart=/home/ubuntu/dashboard-venv/bin/gunicorn --config /home/ubuntu/dashboard/deploy/gunicorn.conf.py glacier_dashboard_alps:server
 ExecReload=/bin/kill -s HUP $MAINPID
 Restart=always
 RestartSec=5

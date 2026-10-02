@@ -31,3 +31,9 @@ cd code && python glacier_dashboard_alps.py      # http://127.0.0.1:8050
 ```
 
 Set `GLACIER_NC_DIR` if the NetCDF files live somewhere other than `data/glacier_model_data/`.
+
+## Links to a view
+
+The address bar always reflects the current view, so it can be bookmarked or shared, e.g.
+`/?glacier=RGI2000-v7.0-G-11-01522&scenario=rcp_8_5&property=thk&year=2060&metric=volume_km3`.
+`property` is one of `thk`, `velsurf_mag`, `smb`, `mean_temp`; `metric` one of `volume_km3`, `thk_mean_m`, `smb_mean`, `vel_mean`.

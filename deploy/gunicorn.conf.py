@@ -12,7 +12,7 @@ keepalive = 5
 max_requests = 2000
 max_requests_jitter = 200
 
-accesslog = "-"                   # -> journald
+accesslog = None                  # nginx already logs requests (14 days); avoids a second, unbounded copy of visitor IPs in journald
 errorlog = "-"
 loglevel = "info"
 forwarded_allow_ips = "127.0.0.1"

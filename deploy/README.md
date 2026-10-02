@@ -7,7 +7,9 @@ browser ──HTTPS──> nginx (:443, TLS, gzip) ──> gunicorn 127.0.0.1:80
 - `glacierdash.service`: systemd unit, installed at `/etc/systemd/system/glacierdash.service`.
   Runs as `ubuntu` (not root), restarts automatically, capped at 2 GB RAM, logs go to journald.
 - `gunicorn.conf.py`: workers, threads, timeouts, worker recycling.
-- nginx site: `/etc/nginx/sites-available/glacierdash` (proxy + gzip for the JSON figure payloads).
+- nginx site: `/etc/nginx/sites-available/glacierdash` (proxy + gzip for the JSON figure payloads), copy in `nginx-site.conf`.
+  It also proxies and caches the OpenTopoMap basemap tiles under `/tiles/otm/`, so visitor IPs never reach OpenTopoMap.
+  The cache zone is defined in `nginx-tiles.conf`, installed at `/etc/nginx/conf.d/tiles.conf` (cache in `/var/cache/nginx/tiles`, max 2 GB).
 
 ## Everyday commands
 
@@ -30,6 +32,7 @@ Stop the service first (or set `DASH_PORT=8051`), since production already uses 
 ## Tunables (environment variables)
 
 - `GLACIER_NC_DIR`: NetCDF folder (default `data/glacier_model_data`).
+- `OTM_TILE_URL`: base URL of the OpenTopoMap tile proxy (default `https://www.glacier-evolution.nat.fau.de/tiles/otm`).
 - `GLACIER_3D_CACHE_SIZE`: cached 3D frames per worker (default 128, about 1 MB each).
 
 Set them in the unit file with `Environment=NAME=value`.
