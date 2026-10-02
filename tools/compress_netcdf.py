@@ -5,12 +5,16 @@ Streams one 2D frame at a time, so memory use stays small (safe next to the live
 Every output file is verified bit-exact against its source before it is kept.
 
 Usage:
-    python tools/compress_netcdf.py SRC_DIR DST_DIR [--level 1]
+    python tools/compress_netcdf.py SRC_DIR DST_DIR [--level 1] [--ids GLACIERS.csv]
+
+With --ids, only the CORDEX 2D and W5E5_const files of the glaciers listed in the
+CSV's rgi_id column are processed; IDs whose files are missing in SRC_DIR are reported.
 
 Files already present (and verified) in DST_DIR are skipped, so the script can be
 re-run after an interruption.
 """
 import argparse
+import csv
 import itertools
 import os
 import sys
@@ -74,15 +78,36 @@ def verify_file(src: Path, dst: Path) -> bool:
     return True
 
 
+SUFFIXES = ("_Projection_CORDEX_output_2D.nc", "_Projection_output_W5E5_const.nc")
+
+
+def files_for_ids(src_dir: Path, ids_csv: Path) -> list[Path]:
+    with open(ids_csv, newline="", encoding="utf-8-sig") as f:
+        ids = sorted({row["rgi_id"].strip() for row in csv.DictReader(f) if row["rgi_id"].strip()})
+    files, missing = [], []
+    for rgi in ids:
+        for suffix in SUFFIXES:
+            p = src_dir / f"{rgi}{suffix}"
+            (files if p.is_file() else missing).append(p)
+    print(f"{len(ids)} glaciers in {ids_csv.name}: {len(files)} files found, {len(missing)} missing", flush=True)
+    for p in missing:
+        print("MISSING:", p.name, flush=True)
+    return files
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("src_dir", type=Path)
     ap.add_argument("dst_dir", type=Path)
     ap.add_argument("--level", type=int, default=1)
+    ap.add_argument("--ids", type=Path, help="CSV with an rgi_id column; only copy those glaciers")
     args = ap.parse_args()
 
     args.dst_dir.mkdir(parents=True, exist_ok=True)
-    files = sorted(args.src_dir.glob("*.nc"))
+    if args.ids:
+        files = files_for_ids(args.src_dir, args.ids)
+    else:
+        files = sorted(args.src_dir.glob("*.nc"))
     total_in = total_out = 0
     failed = []
     for i, src in enumerate(files, 1):
