@@ -31,7 +31,7 @@ import plotly.colors as pc
 import plotly.graph_objects as go
 from dash import ALL, Dash, dcc, html, Input, Output, State, ctx, no_update
 from dash.exceptions import PreventUpdate
-from flask import Response, abort, redirect, request, send_from_directory
+from flask import Response, abort, request, send_from_directory
 from PIL import Image
 from pyproj import Transformer
 
@@ -50,7 +50,7 @@ DEM_MAXZOOM = 12            # z12 is about 26 m per pixel in the Alps, close to 
 # The model bedrock is merged into the terrain tiles at every zoom level: the raw DEM still contains the ice
 # surface of about 2000, which lies tens of metres above the modelled ice, and MapLibre uses coarse tiles
 # for distant parts of a tilted view and while finer tiles load.
-TERRAIN_VERSION = "v2"      # part of the tile URL; bump when the merge changes, so all caches start over
+TERRAIN_VERSION = "v3"      # part of the tile URL; bump when the merge changes, so all caches start over
 
 # One colour scale per property for all glaciers: (plotly scale, start of the scale used, min, max)
 VAR_STYLE = {
@@ -225,12 +225,31 @@ def encode_terrarium(elev):
     return buf.getvalue()
 
 
+def despike(elev, z, y):
+    """Replace outliers in a DEM tile by the median of their 5x5 neighbourhood.
+
+    The source tiles hold seams of bad pixels (e.g. at zoom 11-12 next to Jamtalferner: -2300 m to 20900 m).
+    Real terrain stays within about 2.5 pixel widths of that median even at the Matterhorn, so 3 pixel
+    widths (at least 150 m) only catches the artefacts."""
+    lat = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * (y + 0.5) / 2 ** z))))
+    thr = max(150.0, 3 * 40075016 * math.cos(math.radians(lat)) / 256 / 2 ** z)
+    for _ in range(2):                                    # a second pass for clusters that skewed the first median
+        p = np.pad(elev, 2, mode="edge")
+        med = np.nanmedian(np.lib.stride_tricks.sliding_window_view(p, (5, 5)), axis=(-2, -1))
+        bad = (np.abs(elev - med) > thr) | (elev > 4900)  # 4900 m: above Mont Blanc
+        if not bad.any():
+            break
+        elev = np.where(bad, med, elev)
+    return elev
+
+
 def merged_terrain(z, x, y):
-    """Terrain tile with the bedrock of every glacier footprint merged in, or None if no glacier touches it."""
+    """Terrain tile: the open DEM without its spikes, with the bedrock of every glacier footprint merged in."""
     path = CACHE_DIR / f"terrain_{TERRAIN_VERSION}" / str(z) / str(x) / f"{y}.png"
     if path.is_file():
-        return path.read_bytes() or None
-    elev, utm = None, {}
+        return path.read_bytes()
+    elev = despike(decode_terrarium(dem_tile_bytes(z, x, y)), z, y)
+    utm = {}
     for g in glaciers_in(*tile_bounds(z, x, y)):
         if g.zone not in utm:                 # coarse tiles hold many glaciers: convert once per zone
             utm[g.zone] = tile_utm(z, x, y, g.zone)
@@ -249,12 +268,10 @@ def merged_terrain(z, x, y):
             continue
         bed = bilinear(g.topg, fi, fj)
         w = np.where(np.isfinite(bed), w, 0)
-        if elev is None:
-            elev = decode_terrarium(dem_tile_bytes(z, x, y))
         elev[win] = elev[win] * (1 - w) + np.nan_to_num(bed) * w
-    data = encode_terrarium(elev) if elev is not None else b""
-    _write_atomic(path, data)     # an empty file means: no glacier here
-    return data or None
+    data = encode_terrarium(elev)
+    _write_atomic(path, data)
+    return data
 
 
 # =========================
@@ -314,23 +331,11 @@ def static3d(name):
     return send_from_directory(ASSETS3D_DIR, name, max_age=60)
 
 
-@server.route("/api3d/dem/<int:z>/<int:x>/<int:y>.png")
-def api_dem(z, x, y):
-    if not (0 <= z <= DEM_MAXZOOM and 0 <= x < 2 ** z and 0 <= y < 2 ** z):
-        abort(404)
-    return Response(dem_tile_bytes(z, x, y), mimetype="image/png", headers={"Cache-Control": "public, max-age=604800"})
-
-
 @server.route("/api3d/terrain/<version>/<int:z>/<int:x>/<int:y>.png")
 def api_terrain(version, z, x, y):
     if version != TERRAIN_VERSION or not (0 <= z <= DEM_MAXZOOM and 0 <= x < 2 ** z and 0 <= y < 2 ** z):
         abort(404)
-    data = merged_terrain(z, x, y)
-    if data is None:
-        r = redirect(f"/api3d/dem/{z}/{x}/{y}.png", code=302)
-        r.headers["Cache-Control"] = "public, max-age=604800"
-        return r
-    return Response(data, mimetype="image/png", headers={"Cache-Control": "public, max-age=604800"})
+    return Response(merged_terrain(z, x, y), mimetype="image/png", headers={"Cache-Control": "public, max-age=604800"})
 
 
 @server.route("/api3d/beds")

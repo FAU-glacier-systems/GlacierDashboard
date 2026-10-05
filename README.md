@@ -31,7 +31,8 @@ Not in git (too large, kept on the server):
 
 ## How the 3D app works
 
-- **Terrain**: open AWS Terrain Tiles with the model bedrock merged in around every glacier. It does not
+- **Terrain**: open AWS Terrain Tiles, cleaned of their spikes (bad pixels along seams in the source data), with
+  the model bedrock merged in around every glacier. It does not
   change over time, so tiles are built once and cached (`~/.cache/glacier3d`, then nginx).
 - **Ice**: `map3d.js` draws every glacier in view as its own 3D surface (bedrock + thickness) in a WebGL
   layer, coloured by the chosen property. A year step is one request (`/api3d/frames`) for all glaciers
