@@ -112,3 +112,21 @@ html[data-theme="dark"] .maplibregl-ctrl-group .maplibregl-ctrl-icon { filter: i
   .logo-corner { right: 8px; gap: 6px; }
   .logo-corner img { height: 13px; }
 }
+
+/* Numbers of the selection, under the colour bar (visible when the settings are folded away too) */
+.stats { display: grid; gap: 2px; font-size: 12px; line-height: 1.35; }
+.stats:empty { display: none; }
+.stats strong { font-weight: 600; }
+.stats .muted strong { color: var(--fg); }
+
+/* First-visit hint, above the toolbar */
+.intro {
+  left: 50%; transform: translateX(-50%); bottom: 82px; width: min(520px, calc(100% - 24px));
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px; font-size: 13px; line-height: 1.4;
+}
+.intro p { margin: 0; flex: 1 1 auto; }
+.intro .btn { flex: 0 0 auto; }
+.intro.is-hidden { display: none; }
+@media (max-width: 640px) {
+  .intro { bottom: 112px; width: calc(100% - 16px); font-size: 12px; }
+}

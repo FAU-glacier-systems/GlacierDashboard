@@ -312,12 +312,33 @@ def _binary(chunks):
 # =========================
 # App
 # =========================
+# page description and the preview shown when a link is shared (Mastodon, Slack, LinkedIn, messengers)
+SITE_URL = os.environ.get("SITE_URL", "https://www.glacier-evolution.nat.fau.de").rstrip("/")
+PAGE_TITLE = "Alpine glacier evolution — RGI 11"
+PAGE_DESCRIPTION = ("Interactive 3D map of 380 glaciers in the European Alps from 2000 to 2100 under three "
+                    "greenhouse gas scenarios (RCP 2.6, 4.5, 8.5): ice thickness, flow speed, mass balance and "
+                    "temperature, modelled at FAU Erlangen-Nürnberg.")
+PREVIEW_IMAGE = "preview.jpg"                     # 1200 x 630, in code/assets
+
 app = Dash(
     __name__,
     assets_folder=str(CODE_DIR / "assets"),       # shared logos, favicon and base stylesheet
-    title="Alpine glacier evolution — RGI 11",
-    meta_tags=[{"name": "viewport", "content": "width=device-width, initial-scale=1"}],
-    index_string=base.INDEX_STRING,
+    title=PAGE_TITLE,
+    meta_tags=[
+        {"name": "viewport", "content": "width=device-width, initial-scale=1"},
+        {"name": "description", "content": PAGE_DESCRIPTION},
+        {"property": "og:type", "content": "website"},
+        {"property": "og:site_name", "content": "FAU glacier evolution"},
+        {"property": "og:title", "content": "Alpine glacier evolution 2000–2100"},
+        {"property": "og:description", "content": PAGE_DESCRIPTION},
+        {"property": "og:url", "content": SITE_URL + "/"},
+        {"property": "og:image", "content": f"{SITE_URL}/assets/{PREVIEW_IMAGE}"},
+        {"property": "og:image:width", "content": "1200"},
+        {"property": "og:image:height", "content": "630"},
+        {"property": "og:image:alt", "content": "3D view of the Great Aletsch Glacier, coloured by ice thickness"},
+        {"name": "twitter:card", "content": "summary_large_image"},
+    ],
+    index_string=base.INDEX_STRING.replace("<html ", '<html lang="en" ', 1),
     # MapLibre is served from here (assets3d/vendor), so visitors' browsers contact no third party
     external_stylesheets=[f"/static3d/{MAPLIBRE}/maplibre-gl.css", "/static3d/style3d.css"],
     external_scripts=[f"/static3d/{MAPLIBRE}/maplibre-gl.js", "/static3d/map3d.js"],
@@ -405,6 +426,7 @@ app.layout = html.Div(
         dcc.Store(id="selected_rgi"),
         dcc.Store(id="property"),          # chosen by clicking the colour bar
         dcc.Store(id="map_config", data=MAP_CONFIG),
+        dcc.Store(id="series_data"),       # volume and area of the selection, for the numbers under the colour bar
         dcc.Store(id="theme", data="dark", storage_type="local"),
         dcc.Interval(id="timelapse_interval", interval=250, disabled=True),
 
@@ -432,6 +454,7 @@ app.layout = html.Div(
                         "background": f"linear-gradient(to right, {', '.join(colour_stops(var, 9))})"}),
                 ]) for label, var in base.PROP_TO_VAR.items() if var in VAR_STYLE
             ]),
+            html.Div(id="glacier_stats", className="stats", **{"aria-live": "polite"}),
             html.Div(className="float-body", children=[
                 html.Div(className="fields", children=[
                     base.field("RCP scenario", dcc.Dropdown(
@@ -461,6 +484,16 @@ app.layout = html.Div(
                 id="year_slider", min=min(base.YEARS), max=max(base.YEARS), step=1, value=base.DEFAULT_YEAR,
                 marks={y: str(y) for y in range(min(base.YEARS), max(base.YEARS) + 1, 20)},
                 updatemode="drag", tooltip={"placement": "top", "always_visible": False})),
+        ]),
+
+        # first-visit hint; map3d.js shows it unless the visitor closed it before
+        html.Div(id="intro", className="float intro is-hidden", role="note", children=[
+            html.P([
+                html.Strong("380 Alpine glaciers, modelled from 2000 to 2100"),
+                " under three greenhouse gas scenarios. Press ▶ Play to watch them change, click a glacier "
+                "for its numbers, or click the colour bar to show flow speed, mass balance or temperature.",
+            ]),
+            html.Button("Got it", id="intro_close", className="btn"),
         ]),
 
         html.Div(className="legal-corner", children=legal.legal_links()),
@@ -548,6 +581,8 @@ app.clientside_callback(
         if (property) p.set('property', property);
         if (year) p.set('year', year);
         if (metric) p.set('metric', metric);
+        const view = new URLSearchParams(window.location.search).get('view');   // the camera, kept by map3d.js
+        if (view) p.set('view', view);
         window.history.replaceState(window.history.state, '', window.location.pathname + '?' + p.toString());
         return window.dash_clientside.no_update;
     }""",
@@ -604,6 +639,34 @@ app.clientside_callback(
     Output("timelapse_interval", "disabled"), Output("btn_timelapse", "children"),
     Input("btn_timelapse", "n_clicks"), State("timelapse_interval", "disabled"),
     prevent_initial_call=True,
+)
+
+
+# the numbers under the colour bar: the chosen year against 2000, and what is left in 2100 per scenario
+app.clientside_callback(
+    """function(series, metric, scenario, year, cfg) {
+        if (!series || !scenario || year == null) return [];
+        metric = metric === 'area' ? 'area' : 'volume';
+        const data = series[metric], unit = metric === 'area' ? 'km²' : 'km³';
+        const y0 = cfg.years[0], k = Math.min(Math.max(year - y0, 0), data[0].length - 1);
+        const si = Object.keys(cfg.scenario_labels).indexOf(scenario);
+        const fmt = (v) => v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v >= 1 ? v.toFixed(2) : v.toPrecision(2);
+        const pct = (v, ref) => !(ref > 0) ? '–' : v <= 0 ? 'gone' : v / ref < 0.01 ? '<1 %' : Math.round(v / ref * 100) + ' %';
+        const H = (type, props) => ({namespace: 'dash_html_components', type, props});
+        const v = data[si][k], ref = data[si][0];
+        const now = [H('Strong', {children: String(year)}), ' · ' + (metric === 'area' ? 'area ' : 'volume ') + fmt(v) + ' ' + unit,
+                     ...(year > y0 ? [' · ', H('Strong', {children: pct(v, ref)}), ' of 2000'] : [])];
+        const last = data[0].length - 1, end = ['Left in ' + cfg.years[1] + ':'];
+        Object.entries(cfg.scenario_labels).forEach(([key, label], i) => {
+            const t = ' ' + (label + ' ' + pct(data[i][last], data[i][0])).replace(/ /g, '\\u00a0');   // no break inside
+            end.push(i === si ? H('Strong', {children: t}) : H('Span', {children: t}));
+            if (i < 2) end.push(' ·');
+        });
+        return [H('Div', {children: now}), H('Div', {className: 'muted', children: end})];
+    }""",
+    Output("glacier_stats", "children"),
+    Input("series_data", "data"), Input("metric_var_select", "value"), Input("scenario", "value"),
+    Input("year_slider", "value"), State("map_config", "data"),
 )
 
 
@@ -666,6 +729,16 @@ def set_year(search, ts_click):
 @app.callback(Output("chart_scope", "children"), Input("selected_rgi", "data"))
 def chart_scope(rgi):
     return "This glacier" if rgi else f"All {len(GLACIER_IDS)} glaciers"   # the name is in the subtitle
+
+
+@app.callback(Output("series_data", "data"), Input("selected_rgi", "data"))
+def series_data(rgi):
+    """Volume and area of the selected glacier (or the sum of all), per scenario and year."""
+    out = {}
+    for metric, arr in SERIES.items():
+        data = arr[SERIES_INDEX[rgi]] if rgi in SERIES_INDEX else arr.sum(axis=0)
+        out[metric] = [[float(f"{v:.4g}") for v in row] for row in data]
+    return out
 
 
 def ts_figure(rgi, metric, scenario, theme, year):

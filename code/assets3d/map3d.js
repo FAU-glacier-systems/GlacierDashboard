@@ -304,11 +304,51 @@
     }
   }
 
+  // ---------------------------------------------------------------- camera in the address bar
+  // ?view=lon,lat,zoom,bearing,pitch, so a shared link opens the same view
+  function viewFromUrl() {
+    const v = (new URLSearchParams(window.location.search).get("view") || "").split(",").map(Number);
+    if (v.length !== 5 || v.some((x) => !Number.isFinite(x))) return null;
+    const [lng, lat, zoom, bearing, pitch] = v;
+    if (Math.abs(lng) > 180 || Math.abs(lat) > 85 || zoom < 0 || zoom > 22) return null;
+    return { center: [lng, lat], zoom, bearing, pitch: Math.min(Math.max(pitch, 0), 80) };
+  }
+
+  function viewToUrl() {
+    const m = S.map, c = m.getCenter();
+    const v = [c.lng.toFixed(4), c.lat.toFixed(4), m.getZoom().toFixed(2), m.getBearing().toFixed(0), m.getPitch().toFixed(0)];
+    const p = new URLSearchParams(window.location.search);
+    p.set("view", v.join(","));
+    window.history.replaceState(window.history.state, "", window.location.pathname + "?" + p.toString());
+  }
+
+  // the glacier the link was made for (null = all glaciers); its view comes from the link, so no flight to it
+  function urlGlacier() {
+    const g = new URLSearchParams(window.location.search).get("glacier");
+    return g === "all" ? null : g;
+  }
+
+  // ---------------------------------------------------------------- first-visit hint
+  const INTRO_KEY = "glacier3d-intro-closed";
+  function showIntro() {
+    const el = document.getElementById("intro");
+    let closed = false;
+    try { closed = localStorage.getItem(INTRO_KEY) === "1"; } catch (e) { /* storage blocked: show it */ }
+    if (el && !closed) el.classList.remove("is-hidden");
+  }
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest || !e.target.closest("#intro_close")) return;
+    const el = document.getElementById("intro");
+    if (el) el.classList.add("is-hidden");
+    try { localStorage.setItem(INTRO_KEY, "1"); } catch (err) { /* only remembered where storage works */ }
+  });
+
   // ---------------------------------------------------------------- map
   function init(cfg) {
     const el = document.getElementById("map3d");
     if (!el || !window.maplibregl) return false;
     S.cfg = cfg;
+    S.urlView = viewFromUrl();
     S.names = new Map(cfg.glaciers.features.map((f) => [f.properties.rgi, f.properties.name]));
     S.centres = cfg.glaciers.features.map((f) => [f.properties.rgi, f.geometry.coordinates]);
     const map = new maplibregl.Map({
@@ -316,8 +356,7 @@
       // no paint transitions: the terrain caches draped layers, a half-finished fade would stay visible
       style: { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#202020" } }],
                transition: { duration: 0, delay: 0 } },
-      bounds: cfg.alps_bounds,
-      fitBoundsOptions: { padding: 30 },
+      ...(S.urlView || { bounds: cfg.alps_bounds, fitBoundsOptions: { padding: 30 } }),
       maxPitch: 80,
       attributionControl: false,
     });
@@ -356,12 +395,13 @@
           window.dash_clientside.set_props("rgi_select", { value: rgi });
         }
       });
-      map.on("moveend", sync);
+      map.on("moveend", () => { sync(); viewToUrl(); });
 
       // the compact attribution opens itself whenever sources change; keep it folded until clicked
       map.once("idle", () => el.querySelectorAll(".maplibregl-compact-show")
         .forEach((n) => n.classList.remove("maplibregl-compact-show")));
       S.loaded = true;
+      showIntro();
       apply();
     });
     return true;
@@ -427,7 +467,11 @@
     const newGlacier = st.rgi !== S.rgi;
     S.rgi = st.rgi;
     if (restyled) refreshDrape();
-    if (newGlacier && st.rgi) flyToGlacier(st.rgi, S.firstFlyDone ? 2500 : 3500);
+    if (newGlacier && S.urlView) {
+      // opened from a link with a camera: stay there. The selection may still be on its way from the
+      // server (null first), so the link's view only ends once the link's glacier has arrived.
+      if (st.rgi || urlGlacier() === null) S.urlView = null;
+    } else if (newGlacier && st.rgi) flyToGlacier(st.rgi, S.firstFlyDone ? 2500 : 3500);
     else if (newGlacier) flyToOverview();      // selection cleared: back to all glaciers
     S.firstFlyDone = true;
     sync();
