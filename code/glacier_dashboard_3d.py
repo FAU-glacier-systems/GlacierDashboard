@@ -52,12 +52,14 @@ DEM_MAXZOOM = 12            # z12 is about 26 m per pixel in the Alps, close to 
 # for distant parts of a tilted view and while finer tiles load.
 TERRAIN_VERSION = "v3"      # part of the tile URL; bump when the merge changes, so all caches start over
 
-# One colour scale per property for all glaciers: (plotly scale, start of the scale used, min, max)
+# One colour scale per property for all glaciers: (plotly scale, start of the scale used, min, max, centre).
+# A diverging scale puts its middle colour at the centre value, even when the range is not symmetric around it.
 VAR_STYLE = {
-    "thk": ("Blues", 0.25, 0.0, 300.0),
-    "velsurf_mag": ("Plasma", 0.0, 0.0, 60.0),
-    "smb": ("RdBu", 0.0, -5.0, 5.0),
-    "mean_temp": ("RdBu_r", 0.0, -8.0, 8.0),
+    "thk": ("Blues", 0.25, 0.0, 300.0, None),
+    "velsurf_mag": ("Plasma", 0.0, 0.0, 60.0, None),
+    # the model SMB is skewed: ablation reaches -8 m/a and below, accumulation rarely exceeds +2 m/a
+    "smb": ("RdBu", 0.0, -8.0, 2.0, 0.0),
+    "mean_temp": ("RdBu_r", 0.0, -8.0, 8.0, 0.0),
 }
 
 ALPS_BOUNDS = [[float(base.GLACIERS_DF.cenlon.min()) - 0.4, float(base.GLACIERS_DF.cenlat.min()) - 0.3],
@@ -278,12 +280,17 @@ def merged_terrain(z, x, y):
 # Ice data for the browser
 # =========================
 def colour_stops(var, n):
-    name, start, _, _ = VAR_STYLE[var]
-    return pc.sample_colorscale(pc.get_colorscale(name), list(np.linspace(start, 1, n)))
+    """n colours evenly spaced in value from min to max."""
+    name, start, lo, hi, centre = VAR_STYLE[var]
+    t = np.linspace(0, 1, n)
+    if centre is not None:                       # two linear halves meeting in the middle colour at the centre
+        v = lo + t * (hi - lo)
+        t = np.where(v < centre, 0.5 * (v - lo) / (centre - lo), 0.5 + 0.5 * (v - centre) / (hi - centre))
+    return pc.sample_colorscale(pc.get_colorscale(name), list(start + t * (1 - start)))
 
 
 def var_config(var):
-    _, _, lo, hi = VAR_STYLE[var]
+    _, _, lo, hi, _ = VAR_STYLE[var]
     offset, scale = (0.0, 0.1) if var == "thk" else next(iter(GLACIERS.values())).quant[var]
     lut = [int(c) for s in colour_stops(var, 256) for c in pc.unlabel_rgb(s)]
     return {"lo": lo, "hi": hi, "offset": offset, "scale": scale, "lut": lut, "label": base.VAR_TO_PROP.get(var, var)}
