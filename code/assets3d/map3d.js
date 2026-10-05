@@ -20,7 +20,10 @@
   };
   const origin = () => window.location.origin;
   const LIGHT = normalize([-0.55, 0.55, 0.65]);   // from the north-west, as on maps
-  const LIFT = 0.5;                               // m; keeps the ice surface just above the terrain
+  // The terrain under the ice is a raster resampled from the model bedrock; the coarser the terrain tiles (the
+  // further away), the more it smooths narrow valleys upwards. Lift the ice by about a tenth of the terrain
+  // tile resolution so it is not hidden there; invisible at that distance.
+  const lift = (zoom) => Math.min(Math.max(0.1 * 40075016 / 256 / 2 ** zoom * Math.cos(46.5 * Math.PI / 180), 0.5), 150);
 
   const LOOK = {
     dark: {
@@ -54,12 +57,12 @@
   // ---------------------------------------------------------------- WebGL ice layer
   const VS = `
     precision highp float;
-    uniform mat4 u_matrix; uniform float u_zscale;
+    uniform mat4 u_matrix; uniform float u_zscale; uniform float u_lift;
     attribute vec2 a_pos; attribute vec4 a_zn; attribute vec2 a_ti;
     varying vec3 v_n; varying float v_t; varying float v_ice;
     void main() {
       v_n = a_zn.yzw; v_t = a_ti.x; v_ice = a_ti.y;
-      gl_Position = u_matrix * vec4(a_pos, a_zn.x * u_zscale, 1.0);
+      gl_Position = u_matrix * vec4(a_pos, (a_zn.x + u_lift) * u_zscale, 1.0);
     }`;
   const FS = `
     precision mediump float;
@@ -85,6 +88,7 @@
     return {
       p, a_pos: gl.getAttribLocation(p, "a_pos"), a_zn: gl.getAttribLocation(p, "a_zn"), a_ti: gl.getAttribLocation(p, "a_ti"),
       u_matrix: gl.getUniformLocation(p, "u_matrix"), u_zscale: gl.getUniformLocation(p, "u_zscale"),
+      u_lift: gl.getUniformLocation(p, "u_lift"),
       u_lut: gl.getUniformLocation(p, "u_lut"), u_light: gl.getUniformLocation(p, "u_light"),
     };
   }
@@ -113,15 +117,16 @@
     render(gl, args) {
       if (!S.visible.length) return;
       const P = S.prog, M = args.defaultProjectionData.mainMatrix;
-      // zoomed out, the terrain is the coarse DEM without the model bedrock, which can hide thin ice:
-      // draw the ice on top there (MapLibre restores its own depth state after a custom layer)
-      if (S.map.getZoom() < S.cfg.terrain_minzoom) gl.disable(gl.DEPTH_TEST);
+      // the whole-Alps overview is nearly top-down and its terrain very coarse: draw the ice on top there
+      // (MapLibre restores its own depth state after a custom layer)
+      if (S.map.getZoom() < 8) gl.disable(gl.DEPTH_TEST);
       if (gl.bindVertexArray) gl.bindVertexArray(null);
       gl.useProgram(P.p);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, S.lut);
       gl.uniform1i(P.u_lut, 0);
       gl.uniform3fv(P.u_light, LIGHT);
+      gl.uniform1f(P.u_lift, lift(S.map.getZoom()));
       gl.enableVertexAttribArray(P.a_pos); gl.enableVertexAttribArray(P.a_zn); gl.enableVertexAttribArray(P.a_ti);
       const m = new Float32Array(16);
       for (const G of S.visible) {
@@ -198,7 +203,7 @@
         if (!Number.isFinite(dzdx)) dzdx = 0;
         if (!Number.isFinite(dzdn)) dzdn = 0;
         const nz = 1 / Math.hypot(dzdx, dzdn, 1), o = k * 6;
-        dyn[o] = ok ? z[k] + LIFT : 0;
+        dyn[o] = ok ? z[k] : 0;
         dyn[o + 1] = -dzdx * nz; dyn[o + 2] = -dzdn * nz; dyn[o + 3] = nz;
         dyn[o + 4] = val;
         dyn[o + 5] = ok ? t : 0;
@@ -322,7 +327,7 @@
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "top-right");
 
     map.on("load", () => {
-      const dem = { type: "raster-dem", tiles: [`${origin()}/api3d/terrain/{z}/{x}/{y}.png`], tileSize: 256,
+      const dem = { type: "raster-dem", tiles: [origin() + cfg.terrain_url], tileSize: 256,
                     encoding: "terrarium", maxzoom: cfg.dem_maxzoom };
       map.addSource("dem", { ...dem, attribution: cfg.dem_attribution });
       map.addSource("dem-hs", dem);   // hillshade wants its own source

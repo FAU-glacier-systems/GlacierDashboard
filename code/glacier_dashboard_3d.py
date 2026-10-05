@@ -47,8 +47,10 @@ CACHE_DIR = Path(os.environ.get("GLACIER3D_CACHE_DIR", Path.home() / ".cache" / 
 # Open terrain data (Mapzen/AWS Terrain Tiles, terrarium encoding). Only the server fetches them.
 DEM_URL = os.environ.get("DEM_TILE_URL", "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png")
 DEM_MAXZOOM = 12            # z12 is about 26 m per pixel in the Alps, close to the 25 m model grid
-TERRAIN_MINZOOM = 10        # the model bedrock is merged into the terrain from here (invisible below)
-TERRAIN_VERSION = "v1"      # bump when the merge changes, so cached tiles are rebuilt
+# The model bedrock is merged into the terrain tiles at every zoom level: the raw DEM still contains the ice
+# surface of about 2000, which lies tens of metres above the modelled ice, and MapLibre uses coarse tiles
+# for distant parts of a tilted view and while finer tiles load.
+TERRAIN_VERSION = "v2"      # part of the tile URL; bump when the merge changes, so all caches start over
 
 # One colour scale per property for all glaciers: (plotly scale, start of the scale used, min, max)
 VAR_STYLE = {
@@ -228,9 +230,11 @@ def merged_terrain(z, x, y):
     path = CACHE_DIR / f"terrain_{TERRAIN_VERSION}" / str(z) / str(x) / f"{y}.png"
     if path.is_file():
         return path.read_bytes() or None
-    elev = None
+    elev, utm = None, {}
     for g in glaciers_in(*tile_bounds(z, x, y)):
-        X, Y = tile_utm(z, x, y, g.zone)
+        if g.zone not in utm:                 # coarse tiles hold many glaciers: convert once per zone
+            utm[g.zone] = tile_utm(z, x, y, g.zone)
+        X, Y = utm[g.zone]
         xa, xb, ya, yb = g.foot_utm
         hit = (X >= xa) & (X <= xb) & (Y >= ya) & (Y <= yb)
         rows, cols = np.flatnonzero(hit.any(axis=1)), np.flatnonzero(hit.any(axis=0))
@@ -317,11 +321,11 @@ def api_dem(z, x, y):
     return Response(dem_tile_bytes(z, x, y), mimetype="image/png", headers={"Cache-Control": "public, max-age=604800"})
 
 
-@server.route("/api3d/terrain/<int:z>/<int:x>/<int:y>.png")
-def api_terrain(z, x, y):
-    if not (0 <= z <= DEM_MAXZOOM and 0 <= x < 2 ** z and 0 <= y < 2 ** z):
+@server.route("/api3d/terrain/<version>/<int:z>/<int:x>/<int:y>.png")
+def api_terrain(version, z, x, y):
+    if version != TERRAIN_VERSION or not (0 <= z <= DEM_MAXZOOM and 0 <= x < 2 ** z and 0 <= y < 2 ** z):
         abort(404)
-    data = merged_terrain(z, x, y) if z >= TERRAIN_MINZOOM else None
+    data = merged_terrain(z, x, y)
     if data is None:
         r = redirect(f"/api3d/dem/{z}/{x}/{y}.png", code=302)
         r.headers["Cache-Control"] = "public, max-age=604800"
@@ -376,7 +380,7 @@ METRICS = {"volume": "Volume (km³)", "area": "Area (km²)"}
 MAP_CONFIG = {
     "alps_bounds": ALPS_BOUNDS,
     "dem_maxzoom": DEM_MAXZOOM,
-    "terrain_minzoom": TERRAIN_MINZOOM,
+    "terrain_url": f"/api3d/terrain/{TERRAIN_VERSION}/{{z}}/{{x}}/{{y}}.png",
     "dem_attribution": 'Terrain: <a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md" '
                        'target="_blank">Terrain Tiles</a> (SRTM, GMTED, ETOPO1, EU-DEM © Copernicus, '
                        'DGM © offene Daten Österreichs) · Glacier model: FAU',
@@ -703,13 +707,14 @@ def _warm_dem():
         y1 = int((1 - math.asinh(math.tan(math.radians(s))) / math.pi) / 2 * k)
         for x in range(x0, x1 + 1):
             for y in range(y0, y1 + 1):
-                if not (CACHE_DIR / "terrarium" / str(z) / str(x) / f"{y}.png").is_file():
-                    try:
+                try:
+                    if not (CACHE_DIR / "terrarium" / str(z) / str(x) / f"{y}.png").is_file():
                         dem_tile_bytes(z, x, y)
                         fetched += 1
-                    except Exception:
-                        pass
-    log("DEM warm-up done,", fetched, "tiles fetched")
+                    merged_terrain(z, x, y)            # cached on disk after the first worker built it
+                except Exception:
+                    pass
+    log("terrain warm-up done,", fetched, "DEM tiles fetched")
 
 
 threading.Thread(target=_warm_dem, daemon=True).start()
