@@ -1,5 +1,5 @@
 """
-Build the read-optimised glacier store used by the 3D dashboard (code/glacier_dashboard_3d.py).
+Build the read-optimised glacier store used by the 3D dashboard (code/dash3d/store.py).
 
 The NetCDF files are compressed per 2D frame, so every frame read means decompressing it (several ms).
 The store keeps only what the 3D view draws, uncompressed and memory-mappable, cropped to the

@@ -10,8 +10,8 @@ Live at https://www.glacier-evolution.nat.fau.de. This branch is what runs on th
 | Path | Contents |
 |---|---|
 | `code/glacier_dashboard_3d.py` | the app that is served: full-window 3D map, exposes `server` for gunicorn |
+| `code/dash3d/` | its parts: glacier list and settings, glacier store, terrain tiles, colour scales, data API, layout, callbacks |
 | `code/assets3d/` | its map code (`map3d.js`), stylesheet and the self-hosted MapLibre GL JS |
-| `code/glacier_dashboard_alps.py` | the earlier 2D dashboard; the 3D app imports its glacier list, names and helpers |
 | `code/legal.py` | Impressum, Datenschutz, Barrierefreiheit |
 | `code/assets/` | logos, favicon, base CSS |
 | `deploy/` | systemd unit, gunicorn and nginx config, and how to operate the server ([deploy/README.md](deploy/README.md)) |
@@ -26,8 +26,6 @@ Not in git (too large, kept on the server):
 - `data/glacier_store/`: built from those files by `tools/build_glacier_store.py` (about 7 GB, 5 minutes).
   Per glacier, cropped to the glacier: bedrock once, ice thickness per scenario and year, and the other
   properties quantised to one byte, all uncompressed and memory-mapped. `series.npz` caches volume and area.
-- `data/metrics_over_time_graphic/glacier_yearly_metrics.csv`: metrics table of the 2D dashboard
-  (predates the current model output; the 3D app computes volume and area from the store instead)
 
 ## How the 3D app works
 
@@ -66,4 +64,4 @@ The address bar always reflects the current view, so it can be bookmarked or sha
 to the glacier.
 
 The link preview (Mastodon, Slack, messengers) uses `code/assets/preview.jpg` (1200 × 630) and the page
-description in `glacier_dashboard_3d.py`; set `SITE_URL` if the site moves to another address.
+description in `code/dash3d/layout.py`; set `SITE_URL` if the site moves to another address.

@@ -25,20 +25,22 @@
   // tile resolution so it is not hidden there; invisible at that distance.
   const lift = (zoom) => Math.min(Math.max(0.1 * 40075016 / 256 / 2 ** zoom * Math.cos(46.5 * Math.PI / 180), 0.5), 150);
 
+  // the atmosphere: a halo around the globe when zoomed out, a light haze at the horizon close up
+  const ATMOSPHERE = ["interpolate", ["linear"], ["zoom"], 0, 1, 6, 0.8, 9, 0.4];
   const LOOK = {
     dark: {
       background: "#202020",
       hillshade: { "hillshade-exaggeration": 0.6, "hillshade-shadow-color": "#000", "hillshade-highlight-color": "#a8a8a8",
                    "hillshade-accent-color": "#1a1a1a" },
       sky: { "sky-color": "#0b1320", "horizon-color": "#2a3444", "fog-color": "#151515", "sky-horizon-blend": 0.6,
-             "horizon-fog-blend": 0.6, "fog-ground-blend": 0.85, "atmosphere-blend": 0.4 },
+             "horizon-fog-blend": 0.6, "fog-ground-blend": 0.85, "atmosphere-blend": ATMOSPHERE },
     },
     light: {
       background: "#ececec",
       hillshade: { "hillshade-exaggeration": 0.5, "hillshade-shadow-color": "#6b6b6b", "hillshade-highlight-color": "#fff",
                    "hillshade-accent-color": "#8a8a8a" },
       sky: { "sky-color": "#bcd6ec", "horizon-color": "#eef3f7", "fog-color": "#f4f4f4", "sky-horizon-blend": 0.6,
-             "horizon-fog-blend": 0.6, "fog-ground-blend": 0.85, "atmosphere-blend": 0.5 },
+             "horizon-fog-blend": 0.6, "fog-ground-blend": 0.85, "atmosphere-blend": ATMOSPHERE },
     },
   };
 
@@ -55,40 +57,60 @@
   const dims = (m, s) => [Math.ceil(m.nx / s), Math.ceil(m.ny / s)];
 
   // ---------------------------------------------------------------- WebGL ice layer
+  // MapLibre's projection prelude comes first (args.shaderData): on the globe it provides projectToSphere, the
+  // far-side clipping plane and the globe/flat transition. a_pos is relative to the glacier's origin (Mercator).
   const VS = `
-    precision highp float;
-    uniform mat4 u_matrix; uniform float u_zscale; uniform float u_lift;
+    uniform float u_zscale; uniform float u_lift; uniform float u_zbias;
     attribute vec2 a_pos; attribute vec4 a_zn; attribute vec2 a_ti;
-    varying vec3 v_n; varying float v_t; varying float v_ice;
+    varying vec3 v_n; varying float v_t; varying float v_ice; varying float v_side;
     void main() {
       v_n = a_zn.yzw; v_t = a_ti.x; v_ice = a_ti.y;
-      gl_Position = u_matrix * vec4(a_pos, (a_zn.x + u_lift) * u_zscale, 1.0);
+      float elev = a_zn.x + u_lift;                                // metres
+    #ifdef GLOBE
+      vec3 sphere = projectToSphere(a_pos);                        // origin in u_projection_tile_mercator_coords
+      vec3 raised = sphere * (1.0 + elev / GLOBE_RADIUS);
+      vec4 onGlobe = u_projection_matrix * vec4(raised, 1.0);
+      v_side = dot(sphere, u_projection_clipping_plane.xyz) + u_projection_clipping_plane.w;   // < 0: far side
+      gl_Position = u_projection_transition > 0.999 ? onGlobe
+        : mix(u_projection_fallback_matrix * vec4(a_pos, elev, 1.0), onGlobe, u_projection_transition);
+      // the globe's depth range spans the planet, too coarse to keep thin ice in front of the terrain it lies on:
+      // a small depth bias towards the camera (it fades out with the transition to the flat map)
+      gl_Position.z -= u_zbias * gl_Position.w;
+    #else
+      v_side = 1.0;
+      gl_Position = u_projection_matrix * vec4(a_pos, elev * u_zscale, 1.0);
+    #endif
     }`;
   const FS = `
     precision mediump float;
     uniform sampler2D u_lut; uniform vec3 u_light;
-    varying vec3 v_n; varying float v_t; varying float v_ice;
+    varying vec3 v_n; varying float v_t; varying float v_ice; varying float v_side;
     void main() {
-      if (v_ice < 0.5) discard;
+      if (v_ice < 0.5 || v_side < 0.0) discard;
       vec3 c = v_t < -0.5 ? vec3(0.6) : texture2D(u_lut, vec2(clamp(v_t, 0.0, 1.0) * 0.99609375 + 0.001953125, 0.5)).rgb;
       float l = 0.5 + 0.6 * max(dot(normalize(v_n), u_light), 0.0);
       gl_FragColor = vec4(c * l, 1.0);
     }`;
 
-  function compile(gl) {
+  function compile(gl, shaderData) {
     const sh = (type, src) => {
       const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
       if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
       return s;
     };
     const p = gl.createProgram();
-    gl.attachShader(p, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, FS));
+    const vs = `precision highp float;\n${shaderData.vertexShaderPrelude}\n${shaderData.define}\n${VS}`;
+    gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, FS));
     gl.linkProgram(p);
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
     return {
       p, a_pos: gl.getAttribLocation(p, "a_pos"), a_zn: gl.getAttribLocation(p, "a_zn"), a_ti: gl.getAttribLocation(p, "a_ti"),
-      u_matrix: gl.getUniformLocation(p, "u_matrix"), u_zscale: gl.getUniformLocation(p, "u_zscale"),
-      u_lift: gl.getUniformLocation(p, "u_lift"),
+      u_matrix: gl.getUniformLocation(p, "u_projection_matrix"), u_zscale: gl.getUniformLocation(p, "u_zscale"),
+      u_tile: gl.getUniformLocation(p, "u_projection_tile_mercator_coords"),
+      u_clip: gl.getUniformLocation(p, "u_projection_clipping_plane"),
+      u_transition: gl.getUniformLocation(p, "u_projection_transition"),
+      u_fallback: gl.getUniformLocation(p, "u_projection_fallback_matrix"),
+      u_lift: gl.getUniformLocation(p, "u_lift"), u_zbias: gl.getUniformLocation(p, "u_zbias"),
       u_lut: gl.getUniformLocation(p, "u_lut"), u_light: gl.getUniformLocation(p, "u_light"),
     };
   }
@@ -105,7 +127,7 @@
     onAdd(map, gl) {
       S.gl = gl;
       if (!(window.WebGL2RenderingContext && gl instanceof WebGL2RenderingContext)) gl.getExtension("OES_element_index_uint");
-      S.prog = compile(gl);
+      S.progs = {};                     // one program per projection variant ("mercator", "globe")
       S.lut = gl.createTexture();
       gl.bindTexture(gl.TEXTURE_2D, S.lut);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -116,7 +138,9 @@
     },
     render(gl, args) {
       if (!S.visible.length) return;
-      const P = S.prog, M = args.defaultProjectionData.mainMatrix;
+      const sd = args.shaderData, pd = args.defaultProjectionData, M = pd.mainMatrix;
+      const P = S.progs[sd.variantName] || (S.progs[sd.variantName] = compile(gl, sd));
+      const globe = sd.variantName === "globe", F = pd.fallbackMatrix, E = 8192;   // E: MapLibre's tile extent
       // the whole-Alps overview is nearly top-down and its terrain very coarse: draw the ice on top there
       // (MapLibre restores its own depth state after a custom layer)
       if (S.map.getZoom() < 8) gl.disable(gl.DEPTH_TEST);
@@ -127,14 +151,30 @@
       gl.uniform1i(P.u_lut, 0);
       gl.uniform3fv(P.u_light, LIGHT);
       gl.uniform1f(P.u_lift, lift(S.map.getZoom()));
+      if (globe) {
+        gl.uniform1f(P.u_zbias, 1e-5 * pd.projectionTransition);
+        gl.uniformMatrix4fv(P.u_matrix, false, M);                 // positions on the unit sphere
+        gl.uniform4fv(P.u_clip, pd.clippingPlane);
+        gl.uniform1f(P.u_transition, pd.projectionTransition);
+      }
       gl.enableVertexAttribArray(P.a_pos); gl.enableVertexAttribArray(P.a_zn); gl.enableVertexAttribArray(P.a_ti);
       const m = new Float32Array(16);
       for (const G of S.visible) {
         if (!G.ready) continue;
-        // u_matrix = M * translate(origin), in double precision before the cast
-        for (let i = 0; i < 12; i++) m[i] = M[i];
-        for (let i = 0; i < 4; i++) m[12 + i] = M[i] * G.ox + M[4 + i] * G.oy + M[12 + i];
-        gl.uniformMatrix4fv(P.u_matrix, false, m);
+        if (globe) {
+          gl.uniform4f(P.u_tile, G.ox, G.oy, 1, 1);
+          // flat fallback = F * translate(origin) * scale(E, E, 1): a_pos in Mercator units, elevation in metres
+          for (let i = 0; i < 4; i++) {
+            m[i] = F[i] * E; m[4 + i] = F[4 + i] * E; m[8 + i] = F[8 + i];
+            m[12 + i] = (F[i] * G.ox + F[4 + i] * G.oy) * E + F[12 + i];
+          }
+          gl.uniformMatrix4fv(P.u_fallback, false, m);
+        } else {
+          // M * translate(origin), in double precision before the cast
+          for (let i = 0; i < 12; i++) m[i] = M[i];
+          for (let i = 0; i < 4; i++) m[12 + i] = M[i] * G.ox + M[4 + i] * G.oy + M[12 + i];
+          gl.uniformMatrix4fv(P.u_matrix, false, m);
+        }
         gl.uniform1f(P.u_zscale, G.zscale);
         gl.bindBuffer(gl.ARRAY_BUFFER, G.posBuf);
         gl.vertexAttribPointer(P.a_pos, 2, gl.FLOAT, false, 8, 0);
@@ -171,7 +211,7 @@
       idx[q++] = k + 1; idx[q++] = k + nx; idx[q++] = k + nx + 1;
     }
     const G = {
-      rgi, s, nx, ny, n, ox, oy, bed, ready: false,
+      rgi, s, nx, ny, n, ox, oy, bed, ready: false, corners: C,
       zscale: C[0].meterInMercatorCoordinateUnits(), h: m.dx * s,
       dyn: new Float32Array(n * 6), count: idx.length,
       posBuf: gl.createBuffer(), idxBuf: gl.createBuffer(), dynBuf: gl.createBuffer(),
@@ -209,6 +249,7 @@
         dyn[o + 5] = ok ? t : 0;
       }
     }
+    G.thk = thk; G.prop = prop; G.variable = variable;   // kept for the value under the cursor
     const gl = S.gl;
     gl.bindBuffer(gl.ARRAY_BUFFER, G.dynBuf);
     gl.bufferData(gl.ARRAY_BUFFER, dyn, gl.DYNAMIC_DRAW);
@@ -282,6 +323,7 @@
         if (G && G.s === s) applyFrame(G, thk, prop, st.variable);
       }
       S.frameShown = url;
+      if (S.hover) showHover();             // the label follows the shown year
       S.map.triggerRepaint();
       if (st.playing) {                       // read ahead: the next year of the same glaciers
         const next = st.year >= S.cfg.years[1] ? S.cfg.years[0] : st.year + 1;
@@ -355,6 +397,7 @@
       container: el,
       // no paint transitions: the terrain caches draped layers, a half-finished fade would stay visible
       style: { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#202020" } }],
+               projection: { type: "globe" },
                transition: { duration: 0, delay: 0 } },
       ...(S.urlView || { bounds: cfg.alps_bounds, fitBoundsOptions: { padding: 30 } }),
       maxPitch: 80,
@@ -362,20 +405,22 @@
     });
     S.map = map;
     window._map3d = map;   // handy for debugging in the console
-    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
-    map.addControl(new maplibregl.AttributionControl({ compact: true }), "top-right");
+    map.addControl(themeControl(), "top-right");   // above the zoom buttons
+    map.addControl(new maplibregl.NavigationControl({ showZoom: false, visualizePitch: true }), "top-right");   // compass only
+    trackPanelHeight();
 
     map.on("load", () => {
       const dem = { type: "raster-dem", tiles: [origin() + cfg.terrain_url], tileSize: 256,
                     encoding: "terrarium", maxzoom: cfg.dem_maxzoom };
-      map.addSource("dem", { ...dem, attribution: cfg.dem_attribution });
+      map.addSource("dem", dem);   // its sources are credited in the Impressum ("Daten und Quellen")
       map.addSource("dem-hs", dem);   // hillshade wants its own source
       map.setTerrain({ source: "dem", exaggeration: 1.0 });
       map.addLayer({ id: "hillshade", type: "hillshade", source: "dem-hs" });
       map.addLayer(iceLayer);
 
-      // glacier names on hover, selection on click (no markers: the ice itself shows where glaciers are)
-      const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 10 });
+      // glacier label on hover, selection on click (no markers: the ice itself shows where glaciers are)
+      S.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12, className: "glacier-tip",
+                                       maxWidth: "260px" });
       let hoverFrame = 0;
       map.on("mousemove", (e) => {
         if (hoverFrame) return;
@@ -383,28 +428,83 @@
           hoverFrame = 0;
           const rgi = pickGlacier(e);
           map.getCanvas().style.cursor = rgi ? "pointer" : "";
-          if (!rgi) { popup.remove(); return; }
-          const f = S.names.get(rgi);
-          popup.setLngLat(e.lngLat).setText(f).addTo(map);
+          S.hover = rgi ? { rgi, lngLat: e.lngLat } : null;
+          showHover();
         });
       });
-      map.on("mouseout", () => { popup.remove(); });
+      map.on("mouseout", () => { S.hover = null; showHover(); });
       map.on("click", (e) => {
         const rgi = pickGlacier(e);
         if (rgi && window.dash_clientside && window.dash_clientside.set_props) {
-          window.dash_clientside.set_props("rgi_select", { value: rgi });
+          window.dash_clientside.set_props("rgi_select", { data: { rgi, t: Date.now() } });
         }
       });
       map.on("moveend", () => { sync(); viewToUrl(); });
 
-      // the compact attribution opens itself whenever sources change; keep it folded until clicked
-      map.once("idle", () => el.querySelectorAll(".maplibregl-compact-show")
-        .forEach((n) => n.classList.remove("maplibregl-compact-show")));
       S.loaded = true;
       showIntro();
       apply();
     });
     return true;
+  }
+
+  // ---------------------------------------------------------------- hover label
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const fmt = (v) => v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v >= 1 ? v.toFixed(2) : v.toPrecision(2);
+
+  // name, RGI ID and: with thickness shown, the glacier's volume and area (chosen scenario and year) and the ice
+  // thickness under the cursor; otherwise the shown property under the cursor
+  function showHover() {
+    const h = S.hover, popup = S.popup;
+    if (!h) { popup.remove(); return; }
+    const st = S.state || {}, name = S.names.get(h.rgi) || h.rgi;
+    let html = `<div class="tip-name">${esc(name)}</div>` + (name !== h.rgi ? `<div class="tip-id">${esc(h.rgi)}</div>` : "");
+    const here = valueAt(h.rgi, h.lngLat);
+    if (st.variable === "thk") {
+      const ser = seriesOf(h.rgi);
+      if (ser && st.scenario) {
+        const si = Object.keys(S.cfg.scenario_labels).indexOf(st.scenario), yi = st.year - S.cfg.years[0];
+        const vol = ser.volume[si][yi], area = ser.area[si][yi];
+        html += vol > 0 ? `<div class="tip-val">Volume <b>${fmt(vol)} km³</b> · Area <b>${fmt(area)} km²</b></div>`
+                        : `<div class="tip-val">No ice left in ${st.year}</div>`;
+      }
+      if (here && here.value > 0) html += `<div class="tip-here">Thickness <b>${Math.round(here.value)} m</b></div>`;
+    } else if (here && here.value != null) {
+      const label = S.cfg.vars[here.variable].label, m = /^(.*?)\s*\((.*)\)$/.exec(label);
+      const what = m ? m[1] : label, unit = m ? m[2] : "";
+      const v = Math.abs(here.value) >= 10 ? here.value.toFixed(0) : here.value.toFixed(1);
+      html += `<div class="tip-here">${esc(what)} <b>${v} ${esc(unit)}</b></div>`;
+    }
+    popup.setLngLat(h.lngLat).setHTML(html).addTo(S.map);
+  }
+
+  // volume and area per scenario and year of one glacier, fetched once; the label updates when they arrive
+  function seriesOf(rgi) {
+    S.series = S.series || new Map();
+    const got = S.series.get(rgi);
+    if (got !== undefined) return got;
+    S.series.set(rgi, null);
+    fetch(`${origin()}/api3d/series/${S.cfg.meshes[rgi].k}`).then((r) => r.ok ? r.json() : null).then((d) => {
+      S.series.set(rgi, d);
+      if (S.hover && S.hover.rgi === rgi) showHover();
+    }).catch(() => S.series.delete(rgi));
+    return null;
+  }
+
+  // the drawn ice and property value of a glacier at a map position: the grid cell from the grid's corners
+  function valueAt(rgi, lngLat) {
+    const G = S.glaciers && S.glaciers.get(rgi), m = S.cfg.meshes[rgi];
+    if (!G || !G.ready || !G.thk) return null;
+    const P = maplibregl.MercatorCoordinate.fromLngLat(lngLat, 0), [C0, C1, , C3] = G.corners;
+    const ex = C1.x - C0.x, ey = C1.y - C0.y, fx = C3.x - C0.x, fy = C3.y - C0.y, det = ex * fy - ey * fx;
+    const dx = P.x - C0.x, dy = P.y - C0.y, u = (dx * fy - dy * fx) / det, v = (ex * dy - ey * dx) / det;
+    if (!(u >= 0 && u <= 1 && v >= 0 && v <= 1)) return null;
+    const i = Math.min(Math.round(u * (m.nx - 1) / G.s), G.nx - 1), j = Math.min(Math.round(v * (m.ny - 1) / G.s), G.ny - 1);
+    const k = j * G.nx + i, t = G.thk[k] * 0.1;
+    if (!(t > 0)) return { variable: G.variable, value: null };
+    if (G.variable === "thk" || !G.prop) return { variable: "thk", value: t };
+    const q = G.prop[k], c = S.cfg.vars[G.variable];
+    return { variable: G.variable, value: q === 255 ? null : c.offset + q * c.scale };
   }
 
   // the glacier under the pointer: the nearest centre within a few pixels, else (zoomed in) the glacier
@@ -443,14 +543,72 @@
     map.triggerRepaint();
   }
 
+  // the top panel's height as a CSS variable: on phones the map buttons sit below the full-width panel
+  function trackPanelHeight() {
+    const panel = document.querySelector(".title-card");
+    if (!panel || !window.ResizeObserver) return;
+    const set = () => document.documentElement.style.setProperty("--panel-bottom", panel.getBoundingClientRect().bottom + "px");
+    new ResizeObserver(set).observe(panel);
+    window.addEventListener("resize", set);
+    set();
+  }
+
+  // light/dark switch as a map control above the zoom buttons; it presses the (hidden) Dash button, which owns
+  // the theme
+  function themeControl() {
+    let box;
+    return {
+      onAdd() {
+        box = document.createElement("div");
+        box.className = "maplibregl-ctrl maplibregl-ctrl-group theme-ctrl";
+        const btn = document.createElement("button");
+        btn.type = "button"; btn.title = "Switch light/dark theme"; btn.setAttribute("aria-label", btn.title);
+        const sync = () => { btn.textContent = document.documentElement.dataset.theme === "light" ? "☾" : "☀"; };
+        btn.addEventListener("click", () => { const b = document.getElementById("theme_toggle"); if (b) b.click(); });
+        new MutationObserver(sync).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+        sync();
+        box.appendChild(btn);
+        return box;
+      },
+      onRemove() { box.remove(); },
+    };
+  }
+
+  // room around a glacier for what floats over the map: the top panel (beside it on wide screens, above it on
+  // narrow ones) and the dock at the bottom
+  function framePadding() {
+    const W = window.innerWidth, H = window.innerHeight, pad = { top: 40, bottom: 40, left: 40, right: 40 };
+    const panel = document.querySelector(".title-card"), dock = document.querySelector(".dock");
+    if (panel) {
+      const r = panel.getBoundingClientRect();
+      if (r.right < W * 0.45) pad.left = r.right + 20;
+      else pad.top = r.bottom + 20;
+    }
+    if (dock) pad.bottom = H - dock.getBoundingClientRect().top + 20;
+    const free = H - pad.top - pad.bottom;               // always leave the glacier some room
+    if (free < H * 0.3) { const k = (H * 0.7) / (pad.top + pad.bottom); pad.top *= k; pad.bottom *= k; }
+    return pad;
+  }
+
+  // look uphill at a glacier, i.e. from the side it faces, so the mountain behind it cannot hide it; the turn
+  // goes the short way round from the current bearing
+  function facingBearing(aspect) {
+    const now = S.map.getBearing();
+    if (aspect == null) return now;
+    let b = (aspect + 180) % 360;
+    while (b - now > 180) b -= 360;
+    while (b - now < -180) b += 360;
+    return b;
+  }
+
   function flyToGlacier(rgi, duration) {
     const m = S.cfg.meshes[rgi];
     if (!m) return;
     const b = m.bbox;
-    const cam = S.map.cameraForBounds([[b[0], b[1]], [b[2], b[3]]], { padding: { top: 80, bottom: 110, left: 40, right: 40 } });
+    const cam = S.map.cameraForBounds([[b[0], b[1]], [b[2], b[3]]], { padding: framePadding() });
     if (!cam) return;
     S.map.flyTo({ center: cam.center, zoom: Math.min(cam.zoom + 0.3, 12.2), pitch: 60,
-                  bearing: S.map.getBearing(), duration, essential: true });
+                  bearing: facingBearing(m.aspect), duration, essential: true });
   }
 
   function flyToOverview() {
@@ -477,13 +635,25 @@
     sync();
   }
 
-  // When a glacier is selected, Dash's dropdown focuses that entry instead of its search field, so typing
-  // would go nowhere. Put the cursor into the search field whenever the glacier list opens.
-  document.addEventListener("click", (e) => {
-    if (!e.target.closest || !e.target.closest("#rgi_select")) return;
-    // the list opens and moves focus asynchronously; take it back once it has settled
-    for (const ms of [30, 120, 300]) setTimeout(() => { const f = document.querySelector(".dash-dropdown-search"); if (f) f.focus(); }, ms);
-  }, true);
+  // glacier search by keyboard: arrows move between the field and the results, Enter picks the highlighted result
+  // (Enter in the field picks the first one), typing goes back to the field, Esc closes the results
+  document.addEventListener("keydown", (e) => {
+    const box = e.target.closest && e.target.closest(".glacier-search");
+    if (!box) return;
+    const input = box.querySelector("input"), hits = [...box.querySelectorAll(".gs-hit:not(.is-hidden)")];
+    const at = hits.indexOf(e.target);
+    if (e.key === "Escape") { e.target.blur(); return; }
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      if (!hits.length) return;
+      e.preventDefault();
+      const next = e.key === "ArrowDown" ? Math.min(at + 1, hits.length - 1) : at - 1;
+      (next < 0 ? input : hits[next]).focus();
+    } else if (at >= 0 && e.key === "Enter") {
+      e.preventDefault(); e.target.click();
+    } else if (at >= 0 && (e.key.length === 1 || e.key === "Backspace")) {
+      input.focus();                         // the key then lands in the field
+    }
+  });
 
   window.Map3D = {
     render(state, cfg) {

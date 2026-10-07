@@ -1,0 +1,206 @@
+"""Callbacks that run in the browser: everything that changes per year (map, colour bar, numbers, timelapse),
+plus the panels, the theme and the URL."""
+from dash import ALL, Input, Output, State, clientside_callback
+
+clientside_callback(
+    "function(n, t) { return t === 'light' ? 'dark' : 'light'; }",
+    Output("theme", "data"), Input("theme_toggle", "n_clicks"), State("theme", "data"),
+    prevent_initial_call=True,
+)
+
+clientside_callback(
+    """function(t) {
+        t = (t === 'light') ? 'light' : 'dark';
+        document.documentElement.dataset.theme = t;
+        return t === 'dark' ? '☀' : '☾';
+    }""",
+    Output("theme_toggle", "children"), Input("theme", "data"),
+)
+
+# property (colour bar) and scenario menus: the button opens its menu, picking an option closes it and sets the store
+for btn, menu, opt, store in (("cbar_btn", "prop_menu", "prop_opt", "property"), ("sc_btn", "sc_menu", "sc_opt", "scenario")):
+    clientside_callback(
+        f"""function(n, picks, cls) {{
+            const open = window.dash_clientside.callback_context.triggered_id === '{btn}' && cls.includes('is-hidden');
+            return open ? cls.replace(' is-hidden', '') : (cls.includes('is-hidden') ? cls : cls + ' is-hidden');
+        }}""",
+        Output(menu, "className"),
+        Input(btn, "n_clicks"), Input({"type": opt, "index": ALL}, "n_clicks"), State(menu, "className"),
+        prevent_initial_call=True,
+    )
+    clientside_callback(
+        """function(picks) {
+            const t = window.dash_clientside.callback_context.triggered_id;
+            if (!t || !picks.some(n => n)) return window.dash_clientside.no_update;
+            return t.index;
+        }""",
+        Output(store, "data", allow_duplicate=True),
+        Input({"type": opt, "index": ALL}, "n_clicks"),
+        prevent_initial_call=True,
+    )
+
+# glacier search: up to 5 matches of what is typed (name or RGI ID) and how many more there are. Nothing is shown
+# while the field holds the selected glacier's name.
+clientside_callback(
+    """function(text, selected, cfg) {
+        const n = 5, q = (text || '').trim().toLowerCase();
+        const name = (r) => { const o = cfg.search.find(e => e[0] === r); return o ? (o[1] || r) : ''; };
+        const active = q !== '' && !(selected && text === name(selected));
+        const hits = active ? cfg.search.filter(([r, nm]) => nm.toLowerCase().includes(q) || r.toLowerCase().includes(q)) : [];
+        const shown = hits.slice(0, n), more = hits.length - shown.length;
+        const slot = (f) => Array.from({length: n}, (_, i) => i < shown.length ? f(shown[i]) : '');
+        const note = more > 0 ? `${more} more – keep typing` : (active && !shown.length ? 'No glacier found' : '');
+        return [shown.map(h => h[0]),
+                slot(h => h[1] || h[0]), slot(h => h[1] ? h[0] : ''),
+                Array.from({length: n}, (_, i) => 'gs-hit' + (i < shown.length ? '' : ' is-hidden')),
+                note, 'gs-results' + (active ? '' : ' is-empty')];
+    }""",
+    Output("glacier_hits", "data"),
+    Output({"type": "ghit_name", "index": ALL}, "children"), Output({"type": "ghit_id", "index": ALL}, "children"),
+    Output({"type": "ghit", "index": ALL}, "className"),
+    Output("glacier_more", "children"), Output("glacier_results", "className"),
+    Input("glacier_search", "value"), State("selected_rgi", "data"), State("map_config", "data"),
+)
+
+# pick a result (click, or Enter for the first one) or clear the selection (×)
+clientside_callback(
+    """function(clicks, submits, cleared, hits) {
+        const t = window.dash_clientside.callback_context.triggered_id, nu = window.dash_clientside.no_update;
+        let rgi;
+        if (t === 'glacier_clear') rgi = null;
+        else if (t === 'glacier_search') rgi = (hits || [])[0];
+        else if (t && t.type === 'ghit' && clicks[t.index]) rgi = (hits || [])[t.index];
+        if (rgi === undefined) return nu;
+        if (document.activeElement) document.activeElement.blur();   // closes the results
+        return {rgi, t: Date.now()};
+    }""",
+    Output("rgi_select", "data"),
+    Input({"type": "ghit", "index": ALL}, "n_clicks"), Input("glacier_search", "n_submit"),
+    Input("glacier_clear", "n_clicks"), State("glacier_hits", "data"),
+    prevent_initial_call=True,
+)
+
+# the field shows the selected glacier's name; × clears the selection
+clientside_callback(
+    """function(selected, cfg) {
+        const o = selected ? cfg.search.find(e => e[0] === selected) : null;
+        return [o ? (o[1] || o[0]) : '', 'gs-clear' + (selected ? '' : ' is-hidden'),
+                o ? (o[1] || o[0]) : '', o && o[1] ? o[0] : ''];
+    }""",
+    Output("glacier_search", "value"), Output("glacier_clear", "className"),
+    Output("glacier_display_name", "children"), Output("glacier_display_id", "children"),
+    Input("selected_rgi", "data"), State("map_config", "data"),
+)
+
+# while the field holds the selected glacier's name, the name and its RGI ID are shown over it like a search result
+clientside_callback(
+    """function(text, selected, cfg) {
+        const o = selected ? cfg.search.find(e => e[0] === selected) : null;
+        return 'glacier-search' + (o && text === (o[1] || o[0]) ? ' has-sel' : '');
+    }""",
+    Output("glacier_box", "className"),
+    Input("glacier_search", "value"), Input("selected_rgi", "data"), State("map_config", "data"),
+)
+
+clientside_callback(
+    """function(glacier, scenario, property, year) {
+        const p = new URLSearchParams();
+        p.set('glacier', glacier || 'all');
+        if (scenario) p.set('scenario', scenario);
+        if (property) p.set('property', property);
+        if (year) p.set('year', year);
+        const view = new URLSearchParams(window.location.search).get('view');   // the camera, kept by map3d.js
+        if (view) p.set('view', view);
+        window.history.replaceState(window.history.state, '', window.location.pathname + '?' + p.toString());
+        return window.dash_clientside.no_update;
+    }""",
+    Output("url_sync", "data"),
+    Input("selected_rgi", "data"), Input("scenario", "data"), Input("property", "data"),
+    Input("year_slider", "value"),
+    prevent_initial_call=True,
+)
+
+# map and colour bar
+clientside_callback(
+    """function(rgi, scenario, variable, year, theme, stopped, cfg) {
+        const nu = window.dash_clientside.no_update;
+        if (!scenario || !variable || year == null) return nu;
+        theme = theme === 'light' ? 'light' : 'dark';
+        document.documentElement.dataset.prop = variable;     // style3d.css colours the year slider by property
+        if (window.Map3D) window.Map3D.render({rgi, scenario, variable, year, theme, playing: !stopped}, cfg);
+        const v = cfg.vars[variable], lut = v.lut, stops = [];
+        for (let i = 0; i <= 8; i++) { const k = Math.round(i / 8 * 255) * 3; stops.push(`rgb(${lut[k]},${lut[k+1]},${lut[k+2]})`); }
+        const open = (variable === 'thk' || variable === 'velsurf_mag') ? '+' : '';
+        const H = (type, props) => ({namespace: 'dash_html_components', type, props});
+        const bar = [
+            H('Div', {className: 'cbar-ticks', children: [
+                H('Span', {children: String(v.lo)}), H('Span', {className: 'cbar-label', children: v.label}),
+                H('Span', {children: String(v.hi) + open})]}),
+            H('Div', {className: 'cbar-ramp', style: {background: `linear-gradient(to right, ${stops.join(', ')})`}}),
+        ];
+        return bar;
+    }""",
+    Output("colourbar", "children"),
+    Input("selected_rgi", "data"), Input("scenario", "data"), Input("property", "data"),
+    Input("year_slider", "value"), Input("theme", "data"), Input("timelapse_interval", "disabled"),
+    State("map_config", "data"),
+)
+
+# timelapse: the next year as soon as the map has drawn the current one
+clientside_callback(
+    """function(n, year, cfg) {
+        if (window.Map3D && window.Map3D.busy()) return window.dash_clientside.no_update;
+        return year >= cfg.years[1] ? cfg.years[0] : year + 1;
+    }""",
+    Output("year_slider", "value", allow_duplicate=True),
+    Input("timelapse_interval", "n_intervals"), State("year_slider", "value"), State("map_config", "data"),
+    prevent_initial_call=True,
+)
+
+clientside_callback(
+    """function(n, stopped) {
+        const H = (type, props) => ({namespace: 'dash_html_components', type, props});
+        const [icon, word] = stopped ? ['⏸', ' Pause'] : ['▶', ' Play'];
+        return [!stopped, [H('Span', {className: 'play-icon', children: icon}),
+                           H('Span', {className: 'play-word', children: word})]];
+    }""",
+    Output("timelapse_interval", "disabled"), Output("btn_timelapse", "children"),
+    Input("btn_timelapse", "n_clicks"), State("timelapse_interval", "disabled"),
+    prevent_initial_call=True,
+)
+
+clientside_callback(
+    "function(year) { return year == null ? window.dash_clientside.no_update : String(year); }",
+    Output("year_label", "children"), Input("year_slider", "value"),
+)
+
+# the scenario switch and its menu: the selection's volume in the displayed year (the share of 2000 in the tooltip)
+clientside_callback(
+    """function(series, scenario, year, cfg) {
+        const keys = Object.keys(cfg.scenario_labels), n = keys.length;
+        const H = (type, props) => ({namespace: 'dash_html_components', type, props});
+        const cls = keys.map(k => 'sc-opt' + (k === scenario ? ' is-sel' : ''));
+        const label = cfg.scenario_labels[scenario] || '';
+        if (!series || year == null) {
+            return [cls, Array(n).fill(''), Array(n).fill(''),
+                    [H('Strong', {children: label}), H('Span', {className: 'sc-btn-chevron', children: '▾'})]];
+        }
+        const data = series.volume, unit = 'km³';
+        const y0 = cfg.years[0], k = Math.min(Math.max(year - y0, 0), data[0].length - 1);
+        const fmt = (v) => v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v >= 1 ? v.toFixed(2) : v.toPrecision(2);
+        const pct = (v, ref) => !(ref > 0) ? '–' : v <= 0 ? 'gone' : v / ref < 0.01 ? '<1 %' : Math.round(v / ref * 100) + ' %';
+        const val = keys.map((_, i) => fmt(data[i][k]) + '\\u202f' + unit);
+        const share = keys.map((_, i) => pct(data[i][k], data[i][0]));
+        const si = keys.indexOf(scenario);
+        return [cls, val,
+                keys.map((key, i) => `${cfg.scenario_labels[key]}: ${val[i]} in ${year}, ${share[i]} of ${y0}`),
+                [H('Strong', {children: label}), H('Span', {className: 'sc-btn-value', children: si >= 0 ? val[si] : ''}),
+                 H('Span', {className: 'sc-btn-chevron', children: '▾'})]];
+    }""",
+    Output({"type": "sc_opt", "index": ALL}, "className"),
+    Output({"type": "sc_val", "index": ALL}, "children"),
+    Output({"type": "sc_opt", "index": ALL}, "title"),
+    Output("sc_btn", "children"),
+    Input("series_data", "data"), Input("scenario", "data"),
+    Input("year_slider", "value"), State("map_config", "data"),
+)

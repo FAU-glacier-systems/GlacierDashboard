@@ -11,7 +11,6 @@ browser ──HTTPS──> nginx (:443, TLS, gzip, cache) ──> gunicorn 127.0
 - `gunicorn.conf.py`: workers, threads, timeouts, worker recycling.
 - nginx site: `/etc/nginx/sites-available/glacierdash` (proxy + gzip for the JSON figure payloads), copy in `nginx-site.conf`.
   It caches the 3D app's data under `/api3d/` (terrain tiles, per-year ice blocks; fixed per URL).
-  The OpenTopoMap proxy under `/tiles/otm/` is only used by the 2D dashboard.
   The cache zone is defined in `nginx-tiles.conf`, installed at `/etc/nginx/conf.d/tiles.conf` (cache in `/var/cache/nginx/tiles`, max 2 GB).
 
 ## Everyday commands
@@ -32,19 +31,12 @@ cd code && DASH_PORT=8060 /home/ubuntu/dashboard-venv/bin/python glacier_dashboa
 ```
 Production uses port 8050. Memory is tight (3.9 GB, no swap): stop the test app when done.
 
-## Back to the 2D dashboard
-
-In the unit file, change `glacier_dashboard_3d:server` to `glacier_dashboard_alps:server`, then install it as below.
-Note that the 2D dashboard's time-series chart reads `glacier_yearly_metrics.csv`, which predates the current model output.
-
 ## Tunables (environment variables)
 
 - `GLACIER_STORE_DIR`: data store of the 3D app (default `data/glacier_store`, see `tools/build_glacier_store.py`).
 - `GLACIER3D_CACHE_DIR`: terrain tile cache (default `~/.cache/glacier3d`; must be writable for the service).
 - `DEM_TILE_URL`: source of the open terrain tiles (default AWS Terrain Tiles, terrarium encoding).
-- `GLACIER_NC_DIR`: NetCDF folder (default `data/glacier_model_data`).
-- `OTM_TILE_URL`: base URL of the OpenTopoMap tile proxy (default `https://www.glacier-evolution.nat.fau.de/tiles/otm`).
-- `GLACIER_3D_CACHE_SIZE`: cached 3D frames per worker (default 128, about 1 MB each).
+- `SITE_URL`: public address, used in the link preview tags (default `https://www.glacier-evolution.nat.fau.de`).
 
 Set them in the unit file with `Environment=NAME=value`.
 

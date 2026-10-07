@@ -1,4 +1,4 @@
-/* 3D test layout, loaded after assets/style.css: the map fills the window, everything else floats on it. */
+/* 3D layout, loaded after assets/style.css: the map fills the window, everything else floats on it. */
 .app3d { position: fixed; inset: 0; overflow: hidden; background: var(--bg); }
 #map3d { position: absolute; inset: 0; }
 #map3d .maplibregl-canvas { outline: none; }
@@ -14,36 +14,134 @@
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
 }
 
-/* Settings, top left */
-.float-ctrl {
-  top: 12px; left: 12px; width: 300px;
-  max-height: calc(100% - 110px);
-  display: flex; flex-direction: column; gap: 10px;
-  padding: 10px 12px;
+/* Top: the title as plain text on the map, below it the panel with property (colour bar) and glacier search;
+   the panel is stacked, or one row on wide screens. The column lets clicks through to the map. */
+.top-stack {
+  position: absolute; z-index: 2; top: 10px; left: 12px; right: 12px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px; pointer-events: none;
 }
-.float-head { display: flex; align-items: flex-start; gap: 6px; }
-.float-head > div { flex: 1 1 auto; min-width: 0; }
-.float-head h1 { font-size: 14px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.float-head p { font-size: 12px; margin-top: 2px; }
-.float-body { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; min-height: 0; }
-.float-body .fields { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
-.float-ctrl.is-collapsed .float-body { display: none; }
-
-/* Glacier search styled as the subtitle */
-.title-select.dash-dropdown, .title-select .dash-dropdown {
-  border: 0; background: transparent; box-shadow: none; padding: 0; min-height: 0; height: auto;
-  font-size: 12px; color: var(--muted); width: 100%; cursor: pointer;
+.top-stack > * { pointer-events: auto; }
+.top-stack > .float { position: relative; }
+.map-title {
+  font-size: 17px; font-weight: 700; line-height: 1.1; white-space: nowrap; color: var(--fg);
+  text-shadow: 0 0 2px var(--bg), 0 0 6px var(--bg), 0 0 12px var(--bg);   /* readable on any terrain */
 }
-.title-select .dash-dropdown-value { color: var(--fg); }
-.title-select .dash-dropdown-placeholder { color: var(--muted); }
-.title-select:hover .dash-dropdown-value, .title-select:hover .dash-dropdown-placeholder { text-decoration: underline; }
-.title-select .dash-dropdown-trigger-icon { width: 12px; height: 12px; opacity: 0.7; }
+.map-title .year-label { font-size: 32px; margin-left: 2px; }
+.title-card {
+  width: 340px; max-width: 100%;
+  display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;   /* grows; its menus lie over the map */
+}
+/* Glacier search: type in the field; up to 5 results below it while it has the focus */
+.glacier-search { position: relative; }
+.glacier-search::before {
+  content: ""; position: absolute; left: 10px; top: 50%; width: 14px; height: 14px; margin-top: -7px;
+  background: var(--muted); pointer-events: none; z-index: 1;   /* above the field's background */
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5 21 21'/%3E%3C/svg%3E") center / contain no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='10.5' cy='10.5' r='6.5'/%3E%3Cpath d='M15.5 15.5 21 21'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.gs-input {
+  width: 100%; height: 34px; padding: 0 30px 0 30px; font: inherit; font-size: 13px; font-weight: 600;
+  color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; outline: none;
+}
+.gs-input::placeholder { color: var(--muted); font-weight: 400; }
+.gs-input:focus { border-color: var(--fg); }
+.gs-display {
+  position: absolute; inset: 0 30px 0 30px; display: none; align-items: baseline; gap: 8px; padding-top: 8px;
+  font-size: 13px; pointer-events: none; overflow: hidden; white-space: nowrap; z-index: 1;   /* above the field */
+}
+.gs-display .gs-name { font-weight: 600; flex: 0 0 auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.gs-display .gs-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; }   /* the ID gives way first */
+.glacier-search.has-sel:not(:focus-within) .gs-display { display: flex; }
+.glacier-search.has-sel:not(:focus-within) .gs-input { color: transparent; }
+.gs-clear {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; padding: 0;
+  font-size: 17px; line-height: 1; color: var(--muted); background: none; border: 0; border-radius: 6px; cursor: pointer;
+}
+.gs-clear:hover { color: var(--fg); background: var(--hover); }
+.gs-clear.is-hidden { display: none; }
+.gs-results {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 6; display: grid; padding: 4px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+}
+.gs-results.is-empty, .glacier-search:not(:focus-within) .gs-results { display: none; }
+.gs-hit {
+  display: flex; align-items: baseline; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  outline: none;
+}
+.gs-hit:hover, .gs-hit:focus { background: var(--hover); }
+.gs-hit.is-hidden { display: none; }
+.gs-hit { min-width: 0; }
+.gs-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
+.gs-id { font-size: 11px; font-weight: 300; color: var(--muted); white-space: nowrap; overflow: hidden;
+         text-overflow: ellipsis; flex: 0 3 auto; min-width: 0; }   /* shortens before the name */
+.gs-more { padding: 4px 8px; font-size: 12px; font-style: italic; color: var(--muted); }
+.gs-more:empty { display: none; }
 
-/* Colour bar = property switch */
-.cbar-btn { cursor: pointer; border-radius: 6px; padding: 3px 4px; margin: -3px -4px; }
+/* Theme switch: a map control (map3d.js) that presses the hidden Dash button */
+.theme-btn { display: none; }
+.theme-ctrl button { font-size: 15px; line-height: 1; color: #333; }
+html[data-theme="dark"] .theme-ctrl button { color: #e6e6e6; }
+
+/* Bottom column: first-visit hint and dock, stacked from the bottom up. The column lets clicks through to
+   the map; the card holding the focus (an open menu) lies on top of the others. */
+.bottom-stack {
+  position: absolute; z-index: 2; left: 12px; right: 12px; top: 12px; bottom: 26px;
+  display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 8px;
+  pointer-events: none;
+}
+.bottom-stack > .float { position: relative; pointer-events: auto; min-height: 0; }
+.bottom-stack > .float:focus-within { z-index: 5; }
+
+/* Dock: what the map shows (year, scenario, colours) */
+.dock {
+  flex: 0 0 auto; width: 100%; max-width: 1040px; padding: 8px 12px 10px;
+}
+.dock-time { display: flex; align-items: center; gap: 10px; }
+.dock-time .year { flex: 1 1 auto; min-width: 0; padding: 0 16px; }   /* room for the end labels */
+.year-label { font-weight: 700; line-height: 1; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+/* on wide screens the top panel and the dock share one width, centred and clear of the map buttons */
+:root { --bar-w: min(1200px, calc(100vw - 130px)); }
+/* the year slider takes the colour of the shown property */
+html[data-prop="thk"] .dock { --Dash-Fill-Interactive-Strong: #2b7bba; }
+html[data-prop="velsurf_mag"] .dock { --Dash-Fill-Interactive-Strong: #8b2fc9; }
+html[data-prop="smb"] .dock, html[data-prop="mean_temp"] .dock { --Dash-Fill-Interactive-Strong: #c8102e; }
+html[data-theme="dark"][data-prop="thk"] .dock { --Dash-Fill-Interactive-Strong: #5aa7e0; }
+html[data-theme="dark"][data-prop="velsurf_mag"] .dock { --Dash-Fill-Interactive-Strong: #b36bf0; }
+html[data-theme="dark"][data-prop="smb"] .dock, html[data-theme="dark"][data-prop="mean_temp"] .dock {
+  --Dash-Fill-Interactive-Strong: #f0384f;
+}
+/* one line: play, slider, scenario */
+.dock { display: flex; align-items: center; gap: 16px; }
+.dock-time { order: 1; flex: 1 1 auto; min-width: 0; }
+.dock-view { order: 2; flex: 0 0 auto; }
+@media (min-width: 1000px) {
+  .dock { width: var(--bar-w); max-width: none; }
+}
+
+/* Colour bar = property switch; its menu unfolds below it */
+.cbar-wrap { position: relative; }
+.cbar-btn { cursor: pointer; border-radius: 6px; padding: 4px 6px; margin: -4px -6px; }
 .cbar-btn:hover, .cbar-btn:focus-visible { background: var(--hover); outline: none; }
 .cbar-btn .cbar-label::after { content: " ▾"; color: var(--muted); }
-.prop-menu { display: grid; gap: 4px; margin-top: -4px; }
+.cbar { display: grid; gap: 4px; font-size: 11px; }
+.cbar-ramp { height: 10px; border-radius: 3px; border: 1px solid var(--line); }
+.cbar-ticks { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); }
+.cbar-label { color: var(--fg); font-size: 12px; }
+.prop-menu { display: grid; gap: 4px; margin-top: 8px; }
+@media (min-width: 1000px) {
+  .top-stack { align-items: center; }                 /* centred; clear of the map buttons on both sides */
+  .title-card {
+    width: var(--bar-w); max-width: none;
+    flex-direction: row; align-items: center; gap: 18px; padding: 8px 14px;
+  }
+  .title-card .glacier-search { flex: 1 1 300px; min-width: 190px; }
+  .title-card .cbar-wrap { flex: 1 1 300px; min-width: 190px; }
+  /* the property menu drops down instead of growing the row */
+  .title-card .prop-menu {
+    position: absolute; top: calc(100% + 12px); left: -8px; right: -8px; margin: 0; padding: 6px; z-index: 5;
+    background: var(--bg); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+  }
+}
 .prop-menu.is-hidden { display: none; }
 .prop-opt {
   display: grid; gap: 3px; text-align: left; font: inherit; font-size: 12px; color: var(--fg);
@@ -52,36 +150,49 @@
 .prop-opt:hover { background: var(--hover); }
 .prop-opt-ramp { display: block; height: 6px; border-radius: 3px; }
 
-/* Colour bar (stays visible when the settings are folded away) */
-.cbar { display: grid; gap: 3px; font-size: 11px; }
-.cbar-ramp { height: 8px; border-radius: 3px; border: 1px solid var(--line); }
-.cbar-ticks { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); }
-.cbar-label { color: var(--fg); }
-.hint { font-size: 12px; line-height: 1.4; }
-.float-ctrl .logos-side { margin-top: 2px; }
-.float-ctrl .legal-links { display: none; }   /* shown in the corner instead */
-
-/* Chart inside the settings panel */
-.chart-block { display: flex; flex-direction: column; gap: 4px; }
-.chart-head { display: flex; align-items: center; gap: 8px; font-size: 12px; }
-.chart-head > span { flex: 1 1 auto; }
-.chart-head .head-select { flex: 0 0 140px; margin-left: 0; }
-.chart-block .ts-legend { font-size: 11px; gap: 2px 10px; }
-.chart-block .chart { height: 170px; }
-.chart-block .chart > div, .chart-block .graph { height: 100%; }
-
-/* Toolbar, bottom */
-.map-toolbar {
-  left: 12px; right: 12px; bottom: 26px;
-  display: flex; align-items: center; gap: 10px;
-  padding: 6px 10px;
+/* Scenario switch in the dock, like the colour bar: the chosen scenario; its menu opens above it */
+.sc-wrap { position: relative; }
+.sc-btn {
+  display: flex; align-items: baseline; gap: 8px; padding: 5px 10px; min-width: 0; white-space: nowrap;
+  font: inherit; font-size: 13px; color: var(--fg); background: transparent; cursor: pointer;
+  border: 1px solid var(--line); border-radius: 7px; font-variant-numeric: tabular-nums; line-height: 1.3;
 }
-.map-toolbar .year { flex: 1 1 auto; min-width: 160px; }
+.sc-btn:hover, .sc-btn:focus-visible { background: var(--hover); outline: none; }
+.sc-btn-value { color: var(--muted); }
+.sc-btn-chevron { color: var(--muted); font-size: 11px; }
+.sc-menu {
+  position: absolute; bottom: calc(100% + 10px); right: 0; min-width: 100%; z-index: 5;
+  display: grid; gap: 4px; padding: 6px; background: var(--bg);
+  border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+}
+.sc-menu.is-hidden { display: none; }
+.sc-opt {
+  display: flex; justify-content: space-between; gap: 14px; padding: 5px 9px; white-space: nowrap;
+  font: inherit; font-size: 13px; color: var(--fg); background: transparent; cursor: pointer; text-align: left;
+  border: 1px solid var(--line); border-radius: 6px; font-variant-numeric: tabular-nums;
+}
+.sc-opt:hover { background: var(--hover); }
+.sc-opt.is-sel { background: var(--hover); border-color: var(--fg); }
+.sc-opt-label { font-weight: 700; }
+.sc-opt-value { color: var(--muted); }
+
+/* First-visit hint, above the dock */
+.intro {
+  width: min(520px, 100%);
+  display: flex; align-items: center; gap: 12px; padding: 10px 12px; font-size: 13px; line-height: 1.4;
+}
+.intro p { margin: 0; flex: 1 1 auto; }
+.intro .btn { flex: 0 0 auto; }
+.intro.is-hidden { display: none; }
 
 /* Funding logos, always visible under the toolbar on the right */
 .logo-corner { position: absolute; z-index: 2; right: 14px; bottom: 3px; display: flex; gap: 8px; align-items: center; }
 .logo-corner img { height: 18px; width: auto; display: block; }
 html[data-theme="dark"] .logo-corner .logo-fau { filter: brightness(0) invert(0.9); }
+/* the ERC/EU logo comes on black; the light theme gets a copy with a transparent background and dark text */
+.logo-corner .logo-erc { border-radius: 0; }
+.logo-corner .logo-erc-light, html[data-theme="light"] .logo-corner .logo-erc-dark { display: none; }
+html[data-theme="light"] .logo-corner .logo-erc-light { display: block; }
 
 /* Legal links, always visible under the toolbar */
 .legal-corner { position: absolute; z-index: 2; left: 14px; bottom: 4px; }
@@ -92,17 +203,33 @@ html[data-theme="dark"] .logo-corner .logo-fau { filter: brightness(0) invert(0.
 .app3d .maplibregl-popup-content { background: var(--bg); color: var(--fg); padding: 4px 8px; font-size: 12px;
                             border: 1px solid var(--line); }
 .app3d .maplibregl-popup-tip { display: none; }
+/* glacier label on hover: name, RGI ID, numbers */
+.glacier-tip .tip-name { font-weight: 600; }
+.glacier-tip .tip-id { font-size: 10px; font-weight: 300; color: var(--muted); }
+.glacier-tip .tip-val, .glacier-tip .tip-here { margin-top: 3px; font-variant-numeric: tabular-nums; }
+.glacier-tip b { font-weight: 600; }
 .app3d .maplibregl-ctrl-attrib { font-size: 9px; line-height: 1.3; }
 html[data-theme="dark"] .maplibregl-ctrl-group { background: #1a1a1a; }
 html[data-theme="dark"] .maplibregl-ctrl-group button + button { border-top-color: #333; }
 html[data-theme="dark"] .maplibregl-ctrl-group .maplibregl-ctrl-icon { filter: invert(1); }
 
-/* Narrow screens: settings full width, folded by default via the gear button; toolbar wraps */
+/* Phones: full-width top panel with the map buttons below it; icon-only play, scenario without its volume */
 @media (max-width: 640px) {
-  .float-ctrl, .float-ctrl.is-collapsed { left: 8px; right: 8px; top: 8px; width: auto; }
-  .map-toolbar { left: 8px; right: 8px; flex-wrap: wrap; }
-  .map-toolbar .year { order: 3; flex-basis: 100%; }
-  .hint { display: none; }
+  .top-stack { top: 6px; left: 8px; right: 8px; align-items: stretch; }
+  .map-title { text-align: center; }
+  .title-card { width: auto; }
+  /* the map buttons move below the full-width panel (map3d.js keeps --panel-bottom up to date) */
+  .app3d .maplibregl-ctrl-top-right { top: calc(var(--panel-bottom, 150px) - 2px); }
+  .bottom-stack { left: 8px; right: 8px; top: 8px; gap: 6px; }
+  .dock { padding: 6px 8px 8px; gap: 8px; }
+  .dock-time { gap: 8px; }
+  .dock-time .year { padding: 0 12px; }
+  .sc-btn { padding: 5px 8px; gap: 6px; }
+  .sc-btn-value { display: none; }   /* the volumes are in the menu */
+  .play-btn { padding-left: 10px; padding-right: 10px; }
+  .play-word { display: none; }
+  .map-title .year-label { font-size: 30px; }
+  .intro { font-size: 12px; }
 }
 
 /* Phones: legal links and logos share the strip under the toolbar */
@@ -111,22 +238,4 @@ html[data-theme="dark"] .maplibregl-ctrl-group .maplibregl-ctrl-icon { filter: i
   .legal-corner .legal-links { font-size: 10px; gap: 2px 8px; }
   .logo-corner { right: 8px; gap: 6px; }
   .logo-corner img { height: 13px; }
-}
-
-/* Numbers of the selection, under the colour bar (visible when the settings are folded away too) */
-.stats { display: grid; gap: 2px; font-size: 12px; line-height: 1.35; }
-.stats:empty { display: none; }
-.stats strong { font-weight: 600; }
-.stats .muted strong { color: var(--fg); }
-
-/* First-visit hint, above the toolbar */
-.intro {
-  left: 50%; transform: translateX(-50%); bottom: 82px; width: min(520px, calc(100% - 24px));
-  display: flex; align-items: center; gap: 12px; padding: 10px 12px; font-size: 13px; line-height: 1.4;
-}
-.intro p { margin: 0; flex: 1 1 auto; }
-.intro .btn { flex: 0 0 auto; }
-.intro.is-hidden { display: none; }
-@media (max-width: 640px) {
-  .intro { bottom: 112px; width: calc(100% - 16px); font-size: 12px; }
 }

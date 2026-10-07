@@ -1,5 +1,6 @@
 /* =========================================================
-   Glacier dashboard — layout and theme
+   Glacier dashboard: theme, base styles, buttons, legal pages.
+   The 3D page's own layout is in assets3d/style3d.css
    Theme is set as data-theme="dark|light" on <html>.
    ========================================================= */
 
@@ -11,7 +12,6 @@ html[data-theme="dark"] {
   --line: #262626;
   --hover: rgba(255, 255, 255, 0.07);
   --accent: #38bdf8;
-  --hist: #a3a3a3; --rcp26: #e3b505; --rcp45: #ff8c00; --rcp85: #ff6b6b;  /* = THEMES in the .py */
 
   /* Dash 4 component tokens */
   --Dash-Fill-Inverse-Strong: #0a0a0a;
@@ -38,7 +38,6 @@ html[data-theme="light"] {
   --line: #e5e5e5;
   --hover: rgba(0, 0, 0, 0.05);
   --accent: #0369a1;
-  --hist: #737373; --rcp26: #b58900; --rcp45: #e06c00; --rcp85: #d62828;
 
   --Dash-Fill-Inverse-Strong: #fff;
   --Dash-Fill-Interactive-Strong: var(--accent);
@@ -68,131 +67,8 @@ html, body {
 }
 
 h1, h2, p { margin: 0; }
-.muted { color: var(--muted); }
-.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
-/* ---------- Grid ----------
-   Always exactly one window high; the page never scrolls.
-   Landscape: controls sidebar, 3D on top, map + chart below.
-   Portrait:  controls on top, then 3D, then map + chart side by side.
-   Small screens additionally switch to the compact mode further down. */
-.app {
-  --gap: 8px;
-  display: grid;
-  gap: var(--gap);
-  padding: var(--gap);
-  height: 100vh;
-  height: 100dvh;
-  overflow: hidden;
-  grid-template-columns: 260px minmax(0, 1fr) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1.4fr) minmax(0, 1fr);
-  grid-template-areas: "ctrl d3 d3" "ctrl map ts";
-}
-.panel-ctrl { grid-area: ctrl; overflow-y: auto; }
-.panel-3d   { grid-area: d3; }
-.panel-map  { grid-area: map; }
-.panel-ts   { grid-area: ts; }
-.panel-ctrl .fields { grid-template-columns: minmax(0, 1fr); }
-.logos.logos-foot { display: none; grid-area: foot; }
-
-/* .plot takes the space left in its panel; the graph fills it */
-.plot { position: relative; width: 100%; flex: 1 1 0; min-height: 0; }
-.plot > div, .plot-fill, .plot .graph { height: 100%; }
-
-@media (orientation: portrait) {
-  .app {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1.6fr) minmax(0, 1fr) auto;
-    grid-template-areas: "ctrl ctrl" "d3 d3" "map ts" "foot foot";
-  }
-  .panel-ctrl { overflow: visible; }
-  .panel-ctrl .fields { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
-  .logos.logos-side { display: none; }
-  .logos.logos-foot { display: flex; justify-content: center; margin: 0; padding: 0; border: 0; }
-}
-
-/* ---------- Panels ---------- */
-.panel {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--bg);
-  min-width: 0;
-}
-
-.panel-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 10px;
-  min-height: 30px;
-}
-.panel-head h2 {
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.panel-head .head-select { margin-left: auto; flex: 0 1 190px; }
-
-
-.graph { width: 100%; }
-
-/* Time-series legend (HTML so it wraps on narrow screens) */
-.ts-legend { display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; }
-.lg { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
-.lg::before { content: ""; width: 16px; border-top: 3px solid var(--c); }
-.lg-hist { --c: var(--hist); }
-.lg-hist::before { border-top-style: dotted; }
-.lg-rcp_2_6 { --c: var(--rcp26); }
-.lg-rcp_4_5 { --c: var(--rcp45); }
-.lg-rcp_8_5 { --c: var(--rcp85); }
-
-/* Map attribution: keep it, but small */
-.panel-map .maplibregl-ctrl-attrib { font-size: 9px; line-height: 1.3; padding: 0 4px; max-width: 70%; }
-.panel-map .maplibregl-ctrl-attrib-button { transform: scale(0.8); }
-
-/* ---------- Controls ---------- */
-.brand {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--line);
-}
-.brand h1 { font-size: 17px; font-weight: 700; line-height: 1.25; }
-.brand p { font-size: 12px; margin-top: 2px; }
-
-.fields {
-  display: grid;
-  gap: 10px;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-}
-.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.field > span { font-size: 12px; color: var(--muted); }
-
-/* Logos (bottom of the controls panel) */
-.logos {
-  margin-top: auto;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding-top: 10px;
-  border-top: 1px solid var(--line);
-}
-.logos img { display: block; height: auto; }
-.logo-fau { width: 150px; max-width: 100%; }
-.logo-erc { width: 88px; border-radius: 4px; }
-html[data-theme="dark"] .logo-fau { filter: brightness(0) invert(0.9); }
-
-/* ---------- Buttons, checkbox, slider ---------- */
+/* ---------- Buttons, slider ---------- */
 .btn {
   font: inherit;
   font-size: 13px;
@@ -206,51 +82,12 @@ html[data-theme="dark"] .logo-fau { filter: brightness(0) invert(0.9); }
   white-space: nowrap;
 }
 .btn:hover { background: var(--hover); }
-.icon-btn { width: 32px; padding: 0; flex: none; font-size: 15px; }
 
-.toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-}
-.check { font-size: 13px; }
-.check label { display: flex; align-items: center; gap: 6px; cursor: pointer; }
-.year { flex: 1 1 240px; min-width: 200px; }
 .year .dash-slider-container, .year > div { margin: 0; }
 
-/* ---------- Compact mode: phones and short windows ----------
-   Hides labels and helper text that the controls already make clear. */
+/* phones and short windows */
 @media (max-height: 600px), (orientation: portrait) and (max-width: 719px) {
-  .app { --gap: 6px; }
-  .panel { padding: 6px 8px; gap: 6px; border-radius: 8px; }
-  .brand { padding-bottom: 6px; align-items: center; }
-  .brand h1 { font-size: 15px; }
-  .brand p,
-  .field > span,
-  .panel-map .panel-head,
-  .panel-3d .panel-head h2,
-  .panel-ts .panel-head h2 { display: none; }
-  .ts-legend { font-size: 10px; gap: 0 8px; }
-  .lg::before { width: 10px; }
-  .fields { gap: 6px; }
-  .panel-head { min-height: 0; }
-  .panel-ts .panel-head .head-select { margin-left: 0; flex: 1 1 auto; }
   .btn { height: 28px; padding: 0 8px; font-size: 12px; }
-  .icon-btn { width: 28px; padding: 0; }
-  .toolbar { gap: 4px 8px; }
-  .check { font-size: 12px; }
-  .year { min-width: 160px; }
-  .logos { padding-top: 6px; gap: 8px; }
-  .logos.logos-foot { padding-top: 0; }
-  .logo-fau { width: 120px; }
-  .logo-erc { width: 48px; }
-}
-@media (max-height: 600px) and (orientation: landscape) {
-  .app { grid-template-columns: 210px minmax(0, 1fr) minmax(0, 1fr); }
-}
-@media (orientation: portrait) and (max-width: 719px) {
-  .year { flex-basis: 100%; }
 }
 
 /* ---------- Legal links and pages (legal.py) ---------- */
