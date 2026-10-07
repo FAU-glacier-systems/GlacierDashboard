@@ -48,10 +48,13 @@
 
   // ---------------------------------------------------------------- level of detail
   // Target cell size on screen by zoom; each glacier skips cells (stride 1, 2, 4, 8) to get close to it,
-  // so 25 m and 100 m model grids end up at a similar resolution.
-  function targetCell(zoom) { return zoom >= 12.5 ? 25 : zoom >= 11.5 ? 50 : zoom >= 10.5 ? 100 : zoom >= 9.5 ? 200 : 800; }
+  // so 25 m and 100 m model grids end up at a similar resolution. Coarse grids (Aletsch, 100 m) keep their full
+  // resolution one step longer: they have little to spare.
+  function targetCell(zoom) {
+    return zoom >= 11.5 ? 25 : zoom >= 10.5 ? 50 : zoom >= 9.5 ? 100 : zoom >= 8.5 ? 200 : zoom >= 7.5 ? 400 : 800;
+  }
   function strideFor(rgi, zoom) {
-    const r = targetCell(zoom) / S.cfg.meshes[rgi].dx;
+    const dx = S.cfg.meshes[rgi].dx, r = targetCell(zoom) / dx / (dx >= 100 ? 2 : 1);
     return r >= 8 ? 8 : r >= 4 ? 4 : r >= 2 ? 2 : 1;
   }
   const dims = (m, s) => [Math.ceil(m.nx / s), Math.ceil(m.ny / s)];
@@ -84,7 +87,7 @@
     uniform sampler2D u_lut; uniform vec3 u_light;
     varying vec3 v_n; varying float v_t; varying float v_ice; varying float v_side;
     void main() {
-      if (v_ice < 0.5 || v_side < 0.0) discard;
+      if (v_ice < 0.4 || v_side < 0.0) discard;
       vec3 c = v_t < -0.5 ? vec3(0.6) : texture2D(u_lut, vec2(clamp(v_t, 0.0, 1.0) * 0.99609375 + 0.001953125, 0.5)).rgb;
       float l = 0.5 + 0.6 * max(dot(normalize(v_n), u_light), 0.0);
       gl_FragColor = vec4(c * l, 1.0);
@@ -139,9 +142,10 @@
       const sd = args.shaderData, pd = args.defaultProjectionData, M = pd.mainMatrix;
       const P = S.progs[sd.variantName] || (S.progs[sd.variantName] = compile(gl, sd));
       const globe = sd.variantName === "globe", F = pd.fallbackMatrix;
-      // Between zoom 11 and 12 MapLibre blends the globe into the flat map, but tells custom layers the blend is
-      // complete (pd.projectionTransition is always 1). The terrain follows the real blend, so take it from the
-      // style: drawn on the pure globe, the ice would float above the ground away from the centre of the view.
+      // Between zoom 9 and 10 (see the style's projection) MapLibre blends the globe into the flat map, but tells
+      // custom layers the blend is complete (pd.projectionTransition is always 1). The terrain follows the real
+      // blend, so take it from the style: drawn on the pure globe, the ice would float above the ground away from
+      // the centre of the view.
       const blend = globe ? S.map.style.projection.transitionState : 0;
       // the whole-Alps overview is nearly top-down and its terrain very coarse: draw the ice on top there
       // (MapLibre restores its own depth state after a custom layer)
@@ -229,18 +233,32 @@
     gl.deleteBuffer(G.posBuf); gl.deleteBuffer(G.idxBuf); gl.deleteBuffer(G.dynBuf);
   }
 
-  // surface, normal, colour value and thickness per vertex for one year
+  // surface, normal, colour value and ice edge per vertex for one year
   function applyFrame(G, thk, prop, variable) {
     const v = S.cfg.vars[variable], span = v.hi - v.lo, { nx, ny, bed, dyn, h } = G;
-    const z = new Float32Array(G.n);
-    for (let k = 0; k < G.n; k++) z[k] = bed[k] + thk[k] * 0.1;
+    const z = new Float32Array(G.n), ice = new Float32Array(G.n);
+    for (let k = 0; k < G.n; k++) { z[k] = bed[k] + thk[k] * 0.1; ice[k] = thk[k] >= 5 && Number.isFinite(z[k]) ? 1 : 0; }
+    const vals = new Float32Array(G.n);
+    for (let k = 0; k < G.n; k++) {
+      vals[k] = variable === "thk" ? (thk[k] * 0.1 - v.lo) / span
+        : prop[k] === 255 ? -1 : (v.offset + prop[k] * v.scale - v.lo) / span;
+    }
     for (let j = 0; j < ny; j++) {
       const jn = Math.max(j - 1, 0), js = Math.min(j + 1, ny - 1);
       for (let i = 0; i < nx; i++) {
         const k = j * nx + i, iw = Math.max(i - 1, 0), ie = Math.min(i + 1, nx - 1);
-        const t = thk[k] * 0.1, ok = Number.isFinite(z[k]);
-        const val = variable === "thk" ? (t - v.lo) / span
-          : prop[k] === 255 ? -1 : (v.offset + prop[k] * v.scale - v.lo) / span;
+        const ok = Number.isFinite(z[k]);
+        // where the ice ends: half ice-or-not, half that smoothed over the 3x3 neighbours (1-2-1 weights); the
+        // shader cuts at 0.4, so the outline runs between the cells with rounded corners instead of stair steps
+        const nb = 4 * ice[k] + 2 * (ice[j * nx + iw] + ice[j * nx + ie] + ice[jn * nx + i] + ice[js * nx + i])
+                 + ice[jn * nx + iw] + ice[jn * nx + ie] + ice[js * nx + iw] + ice[js * nx + ie];
+        const edge = 0.5 * ice[k] + nb / 32;
+        let val = vals[k];
+        if (val < -0.5) {                // no value (just off the ice): the neighbours' colour, so the edge is not grey
+          let sum = 0, cnt = 0;
+          for (const q of [j * nx + iw, j * nx + ie, jn * nx + i, js * nx + i]) if (vals[q] >= -0.5) { sum += vals[q]; cnt++; }
+          if (cnt) val = sum / cnt;
+        }
         let dzdx = (z[j * nx + ie] - z[j * nx + iw]) / ((ie - iw) * h);
         let dzdn = (z[jn * nx + i] - z[js * nx + i]) / ((js - jn) * h);
         if (!Number.isFinite(dzdx)) dzdx = 0;
@@ -249,7 +267,7 @@
         dyn[o] = ok ? z[k] : 0;
         dyn[o + 1] = -dzdx * nz; dyn[o + 2] = -dzdn * nz; dyn[o + 3] = nz;
         dyn[o + 4] = val;
-        dyn[o + 5] = ok ? t : 0;
+        dyn[o + 5] = ok ? edge : 0;
       }
     }
     G.thk = thk; G.prop = prop; G.variable = variable;   // kept for the value under the cursor
@@ -400,7 +418,8 @@
       container: el,
       // no paint transitions: the terrain caches draped layers, a half-finished fade would stay visible
       style: { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#202020" } }],
-               projection: { type: "globe" },
+               // globe when zoomed out, flat map from zoom 10 on (MapLibre's "globe" switches at 11..12, too early)
+               projection: { type: ["interpolate", ["linear"], ["zoom"], 9, "vertical-perspective", 10, "mercator"] },
                transition: { duration: 0, delay: 0 } },
       ...(S.urlView || { bounds: cfg.alps_bounds, fitBoundsOptions: { padding: 30 } }),
       maxPitch: 80,
@@ -423,7 +442,7 @@
 
       // glacier label on hover, selection on click (no markers: the ice itself shows where glaciers are)
       S.popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12, className: "glacier-tip",
-                                       maxWidth: "260px" });
+                                       maxWidth: "340px" });
       let hoverFrame = 0;
       map.on("mousemove", (e) => {
         if (hoverFrame) return;
@@ -454,12 +473,12 @@
   // ---------------------------------------------------------------- hover label
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
-  // name, RGI ID and the shown property (thickness if nothing else) under the cursor
+  // name (the RGI ID for unnamed glaciers) and the shown property (thickness if nothing else) under the cursor
   function showHover() {
     const h = S.hover, popup = S.popup;
     if (!h) { popup.remove(); return; }
     const st = S.state || {}, name = S.names.get(h.rgi) || h.rgi;
-    let html = `<div class="tip-name">${esc(name)}</div>` + (name !== h.rgi ? `<div class="tip-id">${esc(h.rgi)}</div>` : "");
+    let html = `<div class="tip-name">${esc(name)}</div>`;
     const here = valueAt(h.rgi, h.lngLat);
     if (st.variable === "thk") {
       if (here && here.value > 0) html += `<div class="tip-here">Thickness <b>${Math.round(here.value)} m</b></div>`;
@@ -615,6 +634,20 @@
     S.firstFlyDone = true;
     sync();
   }
+
+  // ways back after moving the camera: a click on the search field while it shows the selected glacier returns to
+  // that glacier's view, a click on the title clears the selection (the × button; apply() then flies to the
+  // whole Alps) or, with nothing selected, just flies there
+  document.addEventListener("click", (e) => {
+    if (!S.loaded || !e.target.closest) return;
+    const box = e.target.closest(".glacier-search");
+    if (box && S.rgi && box.classList.contains("has-sel") && e.target.closest(".gs-input")) flyToGlacier(S.rgi, 1500);
+    else if (e.target.closest(".map-title")) {
+      const clear = document.getElementById("glacier_clear");
+      if (S.rgi && clear) clear.click();
+      else flyToOverview();
+    }
+  });
 
   // glacier search by keyboard: arrows move between the field and the results, Enter picks the highlighted result
   // (Enter in the field picks the first one), typing goes back to the field, Esc closes the results

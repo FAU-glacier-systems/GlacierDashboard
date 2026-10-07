@@ -122,7 +122,7 @@ def make_layout(app):
                     ]),
                 ]),
                 # the title, plain text on the map below the panel
-                html.H1(className="map-title", children=[
+                html.H1(className="map-title", title="Back to all glaciers", children=[
                     "Alpine glaciers in ", html.Span(str(config.DEFAULT_YEAR), id="year_label", className="year-label")]),
             ]),
 
