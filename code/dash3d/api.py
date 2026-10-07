@@ -2,12 +2,12 @@
 import gzip
 
 import numpy as np
-from flask import Blueprint, Response, abort, jsonify, request, send_from_directory
+from flask import Blueprint, Response, abort, request, send_from_directory
 
 from . import config
 
 from .colours import VAR_STYLE
-from .store import GLACIER_IDS, GLACIERS, SERIES
+from .store import GLACIER_IDS, GLACIERS
 from .terrain import DEM_MAXZOOM, TERRAIN_VERSION, merged_terrain
 
 ASSETS3D_DIR = config.CODE_DIR / "assets3d"
@@ -75,14 +75,3 @@ def api_frames():
             p = np.ascontiguousarray(g.prop(var)[si, yi, ::s, ::s]).tobytes()
             chunks.append(p + (b"\0" if len(p) % 2 else b""))
     return _binary(chunks)
-
-
-@bp.route("/api3d/series/<int:k>")
-def api_series(k):
-    """Volume (km³) and area (km²) of glacier k (its index in GLACIER_IDS) per scenario and year, for the hover label."""
-    if not 0 <= k < len(GLACIER_IDS):
-        abort(404)
-    out = {m: [[float(f"{v:.4g}") for v in row] for row in SERIES[m][k]] for m in ("volume", "area")}
-    resp = jsonify(out)
-    resp.headers["Cache-Control"] = "public, max-age=86400"
-    return resp

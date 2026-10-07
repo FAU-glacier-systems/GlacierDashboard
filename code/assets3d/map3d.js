@@ -68,13 +68,11 @@
       float elev = a_zn.x + u_lift;                                // metres
     #ifdef GLOBE
       vec3 sphere = projectToSphere(a_pos);                        // origin in u_projection_tile_mercator_coords
-      vec3 raised = sphere * (1.0 + elev / GLOBE_RADIUS);
-      vec4 onGlobe = u_projection_matrix * vec4(raised, 1.0);
       v_side = dot(sphere, u_projection_clipping_plane.xyz) + u_projection_clipping_plane.w;   // < 0: far side
-      gl_Position = u_projection_transition > 0.999 ? onGlobe
-        : mix(u_projection_fallback_matrix * vec4(a_pos, elev, 1.0), onGlobe, u_projection_transition);
-      // the globe's depth range spans the planet, too coarse to keep thin ice in front of the terrain it lies on:
-      // a small depth bias towards the camera (it fades out with the transition to the flat map)
+      // MapLibre's projection for the terrain, so ice and ground get the same position and the same kind of depth
+      // (on the globe: the distance from the clipping plane), also while the globe blends into the flat map
+      gl_Position = interpolateProjection(a_pos, sphere, elev);
+      // that depth spans the planet, coarse for thin ice on the ground: a small bias towards the camera
       gl_Position.z -= u_zbias * gl_Position.w;
     #else
       v_side = 1.0;
@@ -140,7 +138,11 @@
       if (!S.visible.length) return;
       const sd = args.shaderData, pd = args.defaultProjectionData, M = pd.mainMatrix;
       const P = S.progs[sd.variantName] || (S.progs[sd.variantName] = compile(gl, sd));
-      const globe = sd.variantName === "globe", F = pd.fallbackMatrix, E = 8192;   // E: MapLibre's tile extent
+      const globe = sd.variantName === "globe", F = pd.fallbackMatrix;
+      // Between zoom 11 and 12 MapLibre blends the globe into the flat map, but tells custom layers the blend is
+      // complete (pd.projectionTransition is always 1). The terrain follows the real blend, so take it from the
+      // style: drawn on the pure globe, the ice would float above the ground away from the centre of the view.
+      const blend = globe ? S.map.style.projection.transitionState : 0;
       // the whole-Alps overview is nearly top-down and its terrain very coarse: draw the ice on top there
       // (MapLibre restores its own depth state after a custom layer)
       if (S.map.getZoom() < 8) gl.disable(gl.DEPTH_TEST);
@@ -152,10 +154,10 @@
       gl.uniform3fv(P.u_light, LIGHT);
       gl.uniform1f(P.u_lift, lift(S.map.getZoom()));
       if (globe) {
-        gl.uniform1f(P.u_zbias, 1e-5 * pd.projectionTransition);
+        gl.uniform1f(P.u_zbias, 1e-5 * blend);
         gl.uniformMatrix4fv(P.u_matrix, false, M);                 // positions on the unit sphere
         gl.uniform4fv(P.u_clip, pd.clippingPlane);
-        gl.uniform1f(P.u_transition, pd.projectionTransition);
+        gl.uniform1f(P.u_transition, blend);
       }
       gl.enableVertexAttribArray(P.a_pos); gl.enableVertexAttribArray(P.a_zn); gl.enableVertexAttribArray(P.a_ti);
       const m = new Float32Array(16);
@@ -163,10 +165,11 @@
         if (!G.ready) continue;
         if (globe) {
           gl.uniform4f(P.u_tile, G.ox, G.oy, 1, 1);
-          // flat fallback = F * translate(origin) * scale(E, E, 1): a_pos in Mercator units, elevation in metres
+          // flat map = F * translate(origin) * scale(1, 1, zscale): F takes Mercator units (also for the height),
+          // a_pos is relative to the origin and the elevation is in metres
           for (let i = 0; i < 4; i++) {
-            m[i] = F[i] * E; m[4 + i] = F[4 + i] * E; m[8 + i] = F[8 + i];
-            m[12 + i] = (F[i] * G.ox + F[4 + i] * G.oy) * E + F[12 + i];
+            m[i] = F[i]; m[4 + i] = F[4 + i]; m[8 + i] = F[8 + i] * G.zscale;
+            m[12 + i] = F[i] * G.ox + F[4 + i] * G.oy + F[12 + i];
           }
           gl.uniformMatrix4fv(P.u_fallback, false, m);
         } else {
@@ -450,10 +453,8 @@
 
   // ---------------------------------------------------------------- hover label
   const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-  const fmt = (v) => v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v >= 1 ? v.toFixed(2) : v.toPrecision(2);
 
-  // name, RGI ID and: with thickness shown, the glacier's volume and area (chosen scenario and year) and the ice
-  // thickness under the cursor; otherwise the shown property under the cursor
+  // name, RGI ID and the shown property (thickness if nothing else) under the cursor
   function showHover() {
     const h = S.hover, popup = S.popup;
     if (!h) { popup.remove(); return; }
@@ -461,13 +462,6 @@
     let html = `<div class="tip-name">${esc(name)}</div>` + (name !== h.rgi ? `<div class="tip-id">${esc(h.rgi)}</div>` : "");
     const here = valueAt(h.rgi, h.lngLat);
     if (st.variable === "thk") {
-      const ser = seriesOf(h.rgi);
-      if (ser && st.scenario) {
-        const si = Object.keys(S.cfg.scenario_labels).indexOf(st.scenario), yi = st.year - S.cfg.years[0];
-        const vol = ser.volume[si][yi], area = ser.area[si][yi];
-        html += vol > 0 ? `<div class="tip-val">Volume <b>${fmt(vol)} km³</b> · Area <b>${fmt(area)} km²</b></div>`
-                        : `<div class="tip-val">No ice left in ${st.year}</div>`;
-      }
       if (here && here.value > 0) html += `<div class="tip-here">Thickness <b>${Math.round(here.value)} m</b></div>`;
     } else if (here && here.value != null) {
       const label = S.cfg.vars[here.variable].label, m = /^(.*?)\s*\((.*)\)$/.exec(label);
@@ -476,19 +470,6 @@
       html += `<div class="tip-here">${esc(what)} <b>${v} ${esc(unit)}</b></div>`;
     }
     popup.setLngLat(h.lngLat).setHTML(html).addTo(S.map);
-  }
-
-  // volume and area per scenario and year of one glacier, fetched once; the label updates when they arrive
-  function seriesOf(rgi) {
-    S.series = S.series || new Map();
-    const got = S.series.get(rgi);
-    if (got !== undefined) return got;
-    S.series.set(rgi, null);
-    fetch(`${origin()}/api3d/series/${S.cfg.meshes[rgi].k}`).then((r) => r.ok ? r.json() : null).then((d) => {
-      S.series.set(rgi, d);
-      if (S.hover && S.hover.rgi === rgi) showHover();
-    }).catch(() => S.series.delete(rgi));
-    return null;
   }
 
   // the drawn ice and property value of a glacier at a map position: the grid cell from the grid's corners

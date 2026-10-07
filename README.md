@@ -58,10 +58,9 @@ cd code && DASH_PORT=8060 python glacier_dashboard_3d.py      # http://127.0.0.1
 ## Links to a view
 
 The address bar always reflects the current view, so it can be bookmarked or shared, e.g.
-`/?glacier=RGI2000-v7.0-G-11-01522&scenario=rcp_8_5&property=thk&year=2060&metric=volume`.
+`/?glacier=RGI2000-v7.0-G-11-01522&scenario=rcp_8_5&property=thk&year=2060`.
 `glacier=all` shows all glaciers; `property` is one of `thk`, `velsurf_mag`, `smb`, `mean_temp`;
-`metric` is `volume` or `area`. `view=lon,lat,zoom,bearing,pitch` is the camera; without it the map flies
-to the glacier.
+`view=lon,lat,zoom,bearing,pitch` is the camera; without it the map flies to the glacier.
 
 The link preview (Mastodon, Slack, messengers) uses `code/assets/preview.jpg` (1200 × 630) and the page
 description in `code/dash3d/layout.py`; set `SITE_URL` if the site moves to another address.
