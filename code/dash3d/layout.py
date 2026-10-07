@@ -173,7 +173,7 @@ def make_layout(app):
                 ]),
             ]),
 
-            html.Div(className="legal-corner", children=legal.legal_links()),
+            html.Div(className="legal-corner", children=[legal.sources_link(), legal.legal_links()]),
             html.Div(className="logo-corner", children=[
                 html.Img(src=app.get_asset_url(config.LOGO_FAU), className="logo-fau",
                          alt="Friedrich-Alexander-Universität Erlangen-Nürnberg"),

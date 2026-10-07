@@ -101,4 +101,6 @@ body.legal-page { overflow: auto; }
 .legal h2 { font-size: 15px; margin: 24px 0 6px; }
 .legal p, .legal ul { margin: 0 0 10px; }
 .legal a { color: var(--accent); }
+.legal-top { display: flex; justify-content: space-between; gap: 12px; }
+.legal-note { color: var(--muted); font-size: 13px; }
 .legal .legal-links { margin-top: 32px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 13px; }

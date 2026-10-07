@@ -11,7 +11,7 @@ browser ──HTTPS──> nginx (:443, TLS, gzip, cache) ──> gunicorn 127.0
 - `gunicorn.conf.py`: workers, threads, timeouts, worker recycling.
 - nginx site: `/etc/nginx/sites-available/glacierdash` (proxy + gzip for the JSON figure payloads), copy in `nginx-site.conf`.
   It caches the 3D app's data under `/api3d/` (terrain tiles, per-year ice blocks; fixed per URL).
-  The cache zone is defined in `nginx-tiles.conf`, installed at `/etc/nginx/conf.d/tiles.conf` (cache in `/var/cache/nginx/tiles`, max 2 GB).
+  The cache zone and the rate limit for `/api3d/` (50 requests/s per IP, bursts of 300) are defined in `nginx-tiles.conf`, installed at `/etc/nginx/conf.d/tiles.conf` (cache in `/var/cache/nginx/tiles`, max 2 GB). HTTP/2 is on.
 
 ## Everyday commands
 

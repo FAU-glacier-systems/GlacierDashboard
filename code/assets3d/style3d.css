@@ -197,7 +197,10 @@ html[data-theme="dark"] .logo-corner .logo-fau { filter: brightness(0) invert(0.
 html[data-theme="light"] .logo-corner .logo-erc-light { display: block; }
 
 /* Legal links, always visible under the toolbar */
-.legal-corner { position: absolute; z-index: 2; left: 14px; bottom: 4px; }
+.legal-corner { position: absolute; z-index: 2; left: 14px; bottom: 4px; display: flex; align-items: center; gap: 10px; }
+/* © for the data sources (legal.py), a small circled mark */
+.sources-link { font-size: 12px; line-height: 1; color: var(--muted); text-decoration: none; text-shadow: 0 0 3px var(--bg); }
+.sources-link:hover, .sources-link:focus { color: var(--fg); }
 .legal-corner .legal-links { width: auto; font-size: 11px; }
 .legal-corner .legal-links a { color: var(--muted); text-shadow: 0 0 3px var(--bg); }
 

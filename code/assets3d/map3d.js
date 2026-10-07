@@ -649,6 +649,13 @@
     }
   });
 
+  // the colour bar is a div acting as a button: Enter and Space press it, as for a real button
+  document.addEventListener("keydown", (e) => {
+    if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches("div[role=button]")) {
+      e.preventDefault(); e.target.click();
+    }
+  });
+
   // glacier search by keyboard: arrows move between the field and the results, Enter picks the highlighted result
   // (Enter in the field picks the first one), typing goes back to the field, Esc closes the results
   document.addEventListener("keydown", (e) => {
