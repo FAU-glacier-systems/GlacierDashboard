@@ -1,7 +1,7 @@
-"""Page metadata, the configuration handed to map3d.js, and the Dash layout."""
+"""Page metadata, the configuration handed to map3d.js, and the Dash layout, in English (/) and German (/de)."""
 import os
 
-from dash import dcc, html
+from dash import Input, Output, callback, dcc, html
 
 from . import config
 import legal
@@ -13,6 +13,7 @@ from .terrain import DEM_MAXZOOM, TERRAIN_VERSION
 # page description and the preview shown when a link is shared (Mastodon, Slack, LinkedIn, messengers)
 SITE_URL = os.environ.get("SITE_URL", "https://www.glacier-evolution.nat.fau.de").rstrip("/")
 PAGE_TITLE = "Alpine glacier evolution — RGI 11"
+PAGE_TITLE_DE = "Entwicklung der Alpengletscher — RGI 11"
 PAGE_DESCRIPTION = ("Interactive 3D map of 380 glaciers in the European Alps from 2000 to 2100 under three "
                     "greenhouse gas scenarios (RCP 2.6, 4.5, 8.5): ice thickness, flow speed, mass balance and "
                     "temperature, modelled at FAU Erlangen-Nürnberg.")
@@ -44,39 +45,102 @@ def glaciers_geojson():
 
 SEARCH_HITS = 5                     # at most this many search results, no scrolling
 
+# the interface texts per language. Those used in the browser (clientside.py, map3d.js) go there in
+# map_config ("t").
+N = len(GLACIERS)
+TEXTS = {
+    "en": {
+        "cbar_title": "Click to choose what the colours show",
+        "search": f"Search {N} glaciers…",
+        "show_all": "Show all glaciers",
+        "title": "Alpine glaciers in ", "title_tip": "Back to all glaciers",
+        "theme": "Switch light/dark theme",
+        "intro_head": f"{N} Alpine glaciers, modelled from 2000 to 2100",
+        "intro": " under three greenhouse gas scenarios. Press ▶ to watch them change, click a glacier for its "
+                 "numbers, or click the colour bar to show flow speed, mass balance or temperature.",
+        "intro_ok": "Got it",
+        "scenario": "RCP scenario", "scenario_tip": "Click to choose the greenhouse gas scenario",
+        "play": " Play", "pause": " Pause", "play_tip": "Play or pause the years",
+        "funded": "Funded by the European Union · European Research Council",
+        # in the browser
+        "more": "more – keep typing", "none": "No glacier found",
+        "in": "in", "of": "of", "gone": "gone", "decimal": ".",
+        "thickness": "Thickness", "compass": "Drag to rotate the map; click to turn north and flat, click again to turn back",
+    },
+    "de": {
+        "cbar_title": "Klicken, um zu wählen, was die Farben zeigen",
+        "search": f"{N} Gletscher durchsuchen…",
+        "show_all": "Alle Gletscher zeigen",
+        "title": "Alpengletscher ", "title_tip": "Zurück zu allen Gletschern",
+        "theme": "Hell/dunkel umschalten",
+        "intro_head": f"{N} Alpengletscher, modelliert von 2000 bis 2100",
+        "intro": " unter drei Treibhausgas-Szenarien. Drücken Sie ▶, um ihre Entwicklung zu sehen, klicken Sie auf "
+                 "einen Gletscher für seine Zahlen oder auf die Farbskala, um Fließgeschwindigkeit, Massenbilanz "
+                 "oder Temperatur zu zeigen.",
+        "intro_ok": "Verstanden",
+        "scenario": "RCP-Szenario", "scenario_tip": "Klicken, um das Treibhausgas-Szenario zu wählen",
+        "play": " Start", "pause": " Pause", "play_tip": "Jahre abspielen oder anhalten",
+        "funded": "Gefördert von der Europäischen Union · Europäischer Forschungsrat",
+        "more": "weitere – weiter tippen", "none": "Kein Gletscher gefunden",
+        "in": "im Jahr", "of": "von", "gone": "verschwunden", "decimal": ",",
+        "thickness": "Eisdicke", "compass": "Ziehen, um die Karte zu drehen; klicken für Norden und flach, erneut klicken für zurück",
+    },
+}
+BROWSER_TEXTS = ("more", "none", "in", "of", "gone", "decimal", "thickness", "theme", "play", "pause", "compass")
+
 # [rgi, name] of all glaciers, named ones first (alphabetically), then the unnamed ones by RGI ID
 SEARCH_LIST = sorted(([r, config.GLACIER_NAMES.get(r, "")] for r in GLACIERS),
                      key=lambda e: (not e[1], e[1].lower(), e[0]))
 
-# play button: the word is hidden on phones (style3d.css); clientside.py swaps the pair for ⏸ Pause
-PLAY_LABEL = [html.Span("▶", className="play-icon"), html.Span(" Play", className="play-word")]
 
-MAP_CONFIG = {
+def play_label(lang):
+    """Play button: the word is hidden on phones (style3d.css); clientside.py swaps the pair for ⏸ Pause."""
+    return [html.Span("▶", className="play-icon"), html.Span(TEXTS[lang]["play"], className="play-word")]
+
+
+_MAP_CONFIG = {
     "alps_bounds": ALPS_BOUNDS,
     "dem_maxzoom": DEM_MAXZOOM,
     "terrain_url": f"/api3d/terrain/{TERRAIN_VERSION}/{{z}}/{{x}}/{{y}}.png",
     "glaciers": glaciers_geojson(),
     "meshes": {r: {**g.mesh_info(), "k": k} for k, (r, g) in enumerate(GLACIERS.items())},
-    "vars": {v: var_config(v) for v in VAR_STYLE},
     "scenario_labels": config.SCENARIO_LABELS,
     "search": SEARCH_LIST,
     "years": [config.YEARS[0], config.YEARS[-1]],
 }
+MAP_CONFIG = {lang: {**_MAP_CONFIG, "lang": lang, "vars": {v: var_config(v, lang) for v in VAR_STYLE},
+                     "t": {k: TEXTS[lang][k] for k in BROWSER_TEXTS}} for lang in config.LANGS}
+
+
+def lang_of(path):
+    return "de" if (path or "").rstrip("/").endswith("/de") else "en"
 
 
 def make_layout(app):
+    """The page is filled in by language from the address: / English, /de German."""
+    pages = {lang: make_page(app, lang) for lang in config.LANGS}
+
+    @callback(Output("page", "children"), Input("url", "pathname"))
+    def render_page(path):
+        return pages[lang_of(path)]
+
+    return html.Div([dcc.Location(id="url", refresh=False), html.Div(id="page")])
+
+
+def make_page(app, lang):
+    T = TEXTS[lang]
     return html.Div(
         className="app3d",
+        lang=lang,
         children=[
-            dcc.Location(id="url", refresh=False),
             dcc.Store(id="url_sync"),
             dcc.Store(id="selected_rgi"),
             dcc.Store(id="rgi_select"),        # a glacier picked in the search or on the map: {rgi, t}
             dcc.Store(id="glacier_hits"),      # the RGI IDs shown in the search results
             dcc.Store(id="property"),          # chosen by clicking the colour bar
             dcc.Store(id="scenario"),          # chosen with the scenario buttons
-            dcc.Store(id="map_config", data=MAP_CONFIG),
-            dcc.Store(id="series_data"),       # volume and area of the selection, for the numbers under the colour bar
+            dcc.Store(id="map_config", data=MAP_CONFIG[lang]),
+            dcc.Store(id="series_data"),       # area of the selection per scenario and year, for the scenario switch
             dcc.Store(id="theme", data="dark", storage_type="local"),
             dcc.Interval(id="timelapse_interval", interval=250, disabled=True),
 
@@ -89,7 +153,7 @@ def make_layout(app):
                     # colour bar = property switch; its menu unfolds below it
                     html.Div(className="cbar-wrap", children=[
                         html.Div(id="cbar_btn", className="cbar-btn", n_clicks=0, role="button", tabIndex="0",
-                                 title="Click to choose what the colours show",
+                                 title=T["cbar_title"],
                                  children=html.Div(id="colourbar", className="cbar")),
                         html.Div(id="prop_menu", className="prop-menu is-hidden", children=[
                             html.Button(id={"type": "prop_opt", "index": var}, n_clicks=0, className="prop-opt",
@@ -97,12 +161,12 @@ def make_layout(app):
                                 html.Span(label, className="prop-opt-label"),
                                 html.Span(className="prop-opt-ramp", style={
                                     "background": f"linear-gradient(to right, {', '.join(colour_stops(var, 9))})"}),
-                            ]) for label, var in config.PROP_TO_VAR.items() if var in VAR_STYLE
+                            ]) for var, label in config.VAR_LABELS[lang].items() if var in VAR_STYLE
                         ]),
                     ]),
                     # glacier search: type in the field, up to 5 matches below it (clientside.py fills them in)
                     html.Div(id="glacier_box", className="glacier-search", children=[
-                        dcc.Input(id="glacier_search", type="text", inputMode="search", value="", placeholder=f"Search {len(GLACIERS)} glaciers…",
+                        dcc.Input(id="glacier_search", type="text", inputMode="search", value="", placeholder=T["search"],
                                   autoComplete="off", spellCheck=False, n_submit=0, className="gs-input"),
                         # the selected glacier, laid out like a search result (name, RGI ID); hidden while editing
                         html.Div(className="gs-display", **{"aria-hidden": "true"}, children=[
@@ -110,7 +174,7 @@ def make_layout(app):
                             html.Span(id="glacier_display_id", className="gs-id"),
                         ]),
                         html.Button("×", id="glacier_clear", n_clicks=0, className="gs-clear is-hidden",
-                                    title="Show all glaciers", **{"aria-label": "Show all glaciers"}),
+                                    title=T["show_all"], **{"aria-label": T["show_all"]}),
                         html.Div(id="glacier_results", className="gs-results is-empty", role="listbox", children=[
                             *[html.Div(id={"type": "ghit", "index": i}, n_clicks=0, role="option", tabIndex="-1",
                                        className="gs-hit is-hidden", children=[
@@ -122,13 +186,13 @@ def make_layout(app):
                     ]),
                 ]),
                 # the title, plain text on the map below the panel
-                html.H1(className="map-title", title="Back to all glaciers", children=[
-                    "Alpine glaciers in ", html.Span(str(config.DEFAULT_YEAR), id="year_label", className="year-label")]),
+                html.H1(className="map-title", title=T["title_tip"], children=[
+                    T["title"], html.Span(str(config.DEFAULT_YEAR), id="year_label", className="year-label")]),
             ]),
 
             # theme switch; hidden, map3d.js shows it as a map control under the zoom buttons
             html.Button("☀", id="theme_toggle", n_clicks=0, className="theme-btn",
-                        title="Switch light/dark theme", **{"aria-label": "Switch light/dark theme"}),
+                        title=T["theme"], **{"aria-label": T["theme"]}),
 
             # bottom column, stacked from the bottom up: dock, first-visit hint.
             # The column lets clicks through to the map; only its cards take them.
@@ -136,21 +200,19 @@ def make_layout(app):
                 # first-visit hint; map3d.js shows it unless the visitor closed it before
                 html.Div(id="intro", className="float intro is-hidden", role="note", children=[
                     html.P([
-                        html.Strong("380 Alpine glaciers, modelled from 2000 to 2100"),
-                        " under three greenhouse gas scenarios. Press ▶ to watch them change, click a glacier "
-                        "for its numbers, or click the colour bar to show flow speed, mass balance or temperature.",
+                        html.Strong(T["intro_head"]), T["intro"],
                     ]),
-                    html.Button("Got it", id="intro_close", className="btn"),
+                    html.Button(T["intro_ok"], id="intro_close", className="btn"),
                 ]),
 
                 # the temporal choices in one line: play, slider, scenario
                 html.Div(className="float dock", children=[
                     html.Div(className="dock-view", children=[
-                        # scenario switch like the colour bar: shows the chosen scenario and the selection's volume in
+                        # scenario switch like the colour bar: shows the chosen scenario and the selection's area in
                         # the displayed year; its menu (all scenarios) opens above it
                         html.Div(className="sc-wrap", children=[
                             html.Div(id="sc_menu", className="sc-menu is-hidden", role="listbox",
-                                     **{"aria-label": "RCP scenario"}, children=[
+                                     **{"aria-label": T["scenario"]}, children=[
                                 html.Button(id={"type": "sc_opt", "index": key}, n_clicks=0, className="sc-opt",
                                             children=[
                                     html.Span(label, className="sc-opt-label"),
@@ -158,12 +220,12 @@ def make_layout(app):
                                 ]) for key, label in config.SCENARIO_LABELS.items()
                             ]),
                             html.Button(id="sc_btn", n_clicks=0, className="sc-btn",
-                                        title="Click to choose the greenhouse gas scenario"),
+                                        title=T["scenario_tip"]),
                         ]),
                     ]),
                     html.Div(className="dock-time", children=[
-                        html.Button(PLAY_LABEL, id="btn_timelapse", n_clicks=0, className="btn play-btn",
-                                    title="Play or pause the years", **{"aria-label": "Play or pause the years"}),
+                        html.Button(play_label(lang), id="btn_timelapse", n_clicks=0, className="btn play-btn",
+                                    title=T["play_tip"], **{"aria-label": T["play_tip"]}),
                         html.Div(className="year", children=dcc.Slider(
                             id="year_slider", min=min(config.YEARS), max=max(config.YEARS), step=1,
                             value=config.DEFAULT_YEAR,
@@ -173,14 +235,14 @@ def make_layout(app):
                 ]),
             ]),
 
-            html.Div(className="legal-corner", children=[legal.sources_link(), legal.legal_links()]),
+            html.Div(className="legal-corner", children=[legal.sources_link(lang), legal.legal_links(lang)]),
             html.Div(className="logo-corner", children=[
                 html.Img(src=app.get_asset_url(config.LOGO_FAU), className="logo-fau",
                          alt="Friedrich-Alexander-Universität Erlangen-Nürnberg"),
                 html.Img(src=app.get_asset_url(config.LOGO_ERC), className="logo-erc logo-erc-dark",
-                         alt="Funded by the European Union · European Research Council"),
+                         alt=T["funded"]),
                 html.Img(src=app.get_asset_url(config.LOGO_ERC_LIGHT), className="logo-erc logo-erc-light",
-                         alt="Funded by the European Union · European Research Council"),
+                         alt=T["funded"]),
             ]),
         ],
     )

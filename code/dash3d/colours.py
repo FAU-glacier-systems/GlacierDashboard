@@ -30,8 +30,9 @@ def colour_stops(var, n):
     return pc.sample_colorscale(pc.get_colorscale(name), list(start + t * (1 - start)))
 
 
-def var_config(var):
+def var_config(var, lang):
     _, _, lo, hi, _ = VAR_STYLE[var]
     offset, scale = (0.0, 0.1) if var == "thk" else next(iter(GLACIERS.values())).quant[var]
     lut = [int(c) for s in colour_stops(var, 256) for c in pc.unlabel_rgb(s)]
-    return {"lo": lo, "hi": hi, "offset": offset, "scale": scale, "lut": lut, "label": config.VAR_TO_PROP.get(var, var)}
+    return {"lo": lo, "hi": hi, "offset": offset, "scale": scale, "lut": lut,
+            "label": config.VAR_LABELS[lang].get(var, var)}

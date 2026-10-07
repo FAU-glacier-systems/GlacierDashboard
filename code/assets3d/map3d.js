@@ -411,6 +411,7 @@
     const el = document.getElementById("map3d");
     if (!el || !window.maplibregl) return false;
     S.cfg = cfg;
+    document.documentElement.lang = cfg.lang;
     S.urlView = viewFromUrl();
     S.names = new Map(cfg.glaciers.features.map((f) => [f.properties.rgi, f.properties.name]));
     S.centres = cfg.glaciers.features.map((f) => [f.properties.rgi, f.geometry.coordinates]);
@@ -424,11 +425,13 @@
       ...(S.urlView || { bounds: cfg.alps_bounds, fitBoundsOptions: { padding: 30 } }),
       maxPitch: 80,
       attributionControl: false,
+      locale: { "NavigationControl.ResetBearing": cfg.t.compass },   // the compass tooltip, in the page's language
     });
     S.map = map;
     window._map3d = map;   // handy for debugging in the console
     map.addControl(themeControl(), "top-right");   // above the zoom buttons
     map.addControl(new maplibregl.NavigationControl({ showZoom: false, visualizePitch: true }), "top-right");   // compass only
+    compassToggle(map);
     trackPanelHeight();
 
     map.on("load", () => {
@@ -481,11 +484,11 @@
     let html = `<div class="tip-name">${esc(name)}</div>`;
     const here = valueAt(h.rgi, h.lngLat);
     if (st.variable === "thk") {
-      if (here && here.value > 0) html += `<div class="tip-here">Thickness <b>${Math.round(here.value)} m</b></div>`;
+      if (here && here.value > 0) html += `<div class="tip-here">${esc(S.cfg.t.thickness)} <b>${Math.round(here.value)} m</b></div>`;
     } else if (here && here.value != null) {
       const label = S.cfg.vars[here.variable].label, m = /^(.*?)\s*\((.*)\)$/.exec(label);
       const what = m ? m[1] : label, unit = m ? m[2] : "";
-      const v = Math.abs(here.value) >= 10 ? here.value.toFixed(0) : here.value.toFixed(1);
+      const v = (Math.abs(here.value) >= 10 ? here.value.toFixed(0) : here.value.toFixed(1)).replace(".", S.cfg.t.decimal);
       html += `<div class="tip-here">${esc(what)} <b>${v} ${esc(unit)}</b></div>`;
     }
     popup.setLngLat(h.lngLat).setHTML(html).addTo(S.map);
@@ -562,7 +565,7 @@
         box = document.createElement("div");
         box.className = "maplibregl-ctrl maplibregl-ctrl-group theme-ctrl";
         const btn = document.createElement("button");
-        btn.type = "button"; btn.title = "Switch light/dark theme"; btn.setAttribute("aria-label", btn.title);
+        btn.type = "button"; btn.title = S.cfg.t.theme; btn.setAttribute("aria-label", btn.title);
         const sync = () => { btn.textContent = document.documentElement.dataset.theme === "light" ? "☾" : "☀"; };
         btn.addEventListener("click", () => { const b = document.getElementById("theme_toggle"); if (b) b.click(); });
         new MutationObserver(sync).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
@@ -572,6 +575,28 @@
       },
       onRemove() { box.remove(); },
     };
+  }
+
+  // the compass turns the map to north and flat; pressed again before the camera moves elsewhere, it turns back to
+  // the bearing and tilt from before. Runs ahead of MapLibre's own click handler (capture phase) so it can stop it.
+  function compassToggle(map) {
+    let before = null, after = null;
+    const same = (a, b) => Math.abs(a.zoom - b.zoom) < 0.01 && Math.abs(a.center.lng - b.center.lng) < 1e-6
+      && Math.abs(a.center.lat - b.center.lat) < 1e-6 && Math.abs(a.bearing - b.bearing) < 0.5 && Math.abs(a.pitch - b.pitch) < 0.5;
+    const cam = () => ({ center: map.getCenter(), zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() });
+    map.getContainer().addEventListener("click", (e) => {
+      if (!e.target.closest || !e.target.closest(".maplibregl-ctrl-compass")) return;
+      if (before && (!after || same(cam(), after))) {      // also while the reset is still turning
+        e.stopPropagation();
+        map.easeTo({ bearing: before.bearing, pitch: before.pitch, duration: 1000 });
+        before = after = null;
+        return;
+      }
+      const now = cam();
+      if (Math.abs(now.bearing) < 0.5 && now.pitch < 0.5) { before = after = null; return; }   // already north and flat
+      before = now; after = null;
+      map.once("moveend", () => { after = cam(); });     // where the reset ends: a second press only counts there
+    }, true);
   }
 
   // room around a glacier for what floats over the map: the top panel (beside it on wide screens, above it on
@@ -654,6 +679,12 @@
     if ((e.key === "Enter" || e.key === " ") && e.target.matches && e.target.matches("div[role=button]")) {
       e.preventDefault(); e.target.click();
     }
+  });
+
+  // the switch to the other language keeps the current view (glacier, scenario, year, camera)
+  document.addEventListener("click", (e) => {
+    const a = e.target.closest && e.target.closest("a.lang-switch");
+    if (a) a.href = a.getAttribute("href").split("?")[0] + window.location.search;
   });
 
   // glacier search by keyboard: arrows move between the field and the results, Enter picks the highlighted result

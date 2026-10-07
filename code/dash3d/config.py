@@ -1,4 +1,5 @@
 """Paths, the glacier list and names, properties, scenarios and years, and the page template."""
+import datetime
 import os
 import sys
 from pathlib import Path
@@ -16,13 +17,24 @@ def log(*a):
     print("[alps-dashboard]", *a, file=sys.stdout, flush=True)
 
 
-PROP_TO_VAR = {
-    "Thickness (m)": "thk",
-    "Velocity (m/a)": "velsurf_mag",
-    "Surface Mass Balance (m/a)": "smb",
-    "Mean Temperature (°C)": "mean_temp",
+# the dashboard in English at /, in German at /de
+LANGS = ("en", "de")
+
+# property labels per language, in menu order; the unit in brackets (map3d.js splits it off for the hover label)
+VAR_LABELS = {
+    "en": {
+        "thk": "Thickness (m)",
+        "velsurf_mag": "Velocity (m/a)",
+        "smb": "Surface Mass Balance (m/a)",
+        "mean_temp": "Mean Temperature (°C)",
+    },
+    "de": {
+        "thk": "Eisdicke (m)",
+        "velsurf_mag": "Fließgeschwindigkeit (m/a)",
+        "smb": "Oberflächenmassenbilanz (m/a)",
+        "mean_temp": "Mitteltemperatur (°C)",
+    },
 }
-VAR_TO_PROP = {v: k for k, v in PROP_TO_VAR.items()}
 DEFAULT_VAR = "thk"
 
 SCENARIO_LABELS = {"rcp_2_6": "RCP 2.6", "rcp_4_5": "RCP 4.5", "rcp_8_5": "RCP 8.5"}
@@ -30,7 +42,14 @@ SCENARIO_TO_IDX = {k: i for i, k in enumerate(SCENARIO_LABELS)}
 DEFAULT_SCENARIO = "rcp_4_5"
 
 YEARS = list(range(2000, 2101))     # model years (annual steps)
-DEFAULT_YEAR = 2020
+
+
+def default_year():
+    """The current year (within the model years): what a visitor sees without a year in the link."""
+    return min(max(datetime.date.today().year, YEARS[0]), YEARS[-1])
+
+
+DEFAULT_YEAR = default_year()       # at startup, for the layout; set_year picks the current one on every visit
 
 # The glacier list: the CSV, limited to the glaciers in the store (tools/build_glacier_store.py)
 GLACIERS_DF = pd.read_csv(GLACIERS_CSV, encoding="utf-8-sig")

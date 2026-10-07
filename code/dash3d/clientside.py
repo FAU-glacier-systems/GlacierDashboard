@@ -49,7 +49,7 @@ clientside_callback(
         const hits = active ? cfg.search.filter(([r, nm]) => nm.toLowerCase().includes(q) || r.toLowerCase().includes(q)) : [];
         const shown = hits.slice(0, n), more = hits.length - shown.length;
         const slot = (f) => Array.from({length: n}, (_, i) => i < shown.length ? f(shown[i]) : '');
-        const note = more > 0 ? `${more} more – keep typing` : (active && !shown.length ? 'No glacier found' : '');
+        const note = more > 0 ? `${more} ${cfg.t.more}` : (active && !shown.length ? cfg.t.none : '');
         return [shown.map(h => h[0]),
                 slot(h => h[1] || h[0]), slot(h => h[1] ? h[0] : ''),
                 Array.from({length: n}, (_, i) => 'gs-hit' + (i < shown.length ? '' : ' is-hidden')),
@@ -134,8 +134,9 @@ clientside_callback(
         const H = (type, props) => ({namespace: 'dash_html_components', type, props});
         const bar = [
             H('Div', {className: 'cbar-ticks', children: [
-                H('Span', {children: String(v.lo)}), H('Span', {className: 'cbar-label', children: v.label}),
-                H('Span', {children: String(v.hi) + open})]}),
+                H('Span', {children: String(v.lo).replace('.', cfg.t.decimal)}),
+                H('Span', {className: 'cbar-label', children: v.label}),
+                H('Span', {children: String(v.hi).replace('.', cfg.t.decimal) + open})]}),
             H('Div', {className: 'cbar-ramp', style: {background: `linear-gradient(to right, ${stops.join(', ')})`}}),
         ];
         return bar;
@@ -158,14 +159,14 @@ clientside_callback(
 )
 
 clientside_callback(
-    """function(n, stopped) {
+    """function(n, stopped, cfg) {
         const H = (type, props) => ({namespace: 'dash_html_components', type, props});
-        const [icon, word] = stopped ? ['⏸', ' Pause'] : ['▶', ' Play'];
+        const [icon, word] = stopped ? ['⏸', cfg.t.pause] : ['▶', cfg.t.play];
         return [!stopped, [H('Span', {className: 'play-icon', children: icon}),
                            H('Span', {className: 'play-word', children: word})]];
     }""",
     Output("timelapse_interval", "disabled"), Output("btn_timelapse", "children"),
-    Input("btn_timelapse", "n_clicks"), State("timelapse_interval", "disabled"),
+    Input("btn_timelapse", "n_clicks"), State("timelapse_interval", "disabled"), State("map_config", "data"),
     prevent_initial_call=True,
 )
 
@@ -174,7 +175,7 @@ clientside_callback(
     Output("year_label", "children"), Input("year_slider", "value"),
 )
 
-# the scenario switch and its menu: the selection's volume in the displayed year (the share of 2000 in the tooltip)
+# the scenario switch and its menu: the selection's area in the displayed year (the share of 2000 in the tooltip)
 clientside_callback(
     """function(series, scenario, year, cfg) {
         const keys = Object.keys(cfg.scenario_labels), n = keys.length;
@@ -185,15 +186,16 @@ clientside_callback(
             return [cls, Array(n).fill(''), Array(n).fill(''),
                     [H('Strong', {children: label}), H('Span', {className: 'sc-btn-chevron', children: '▾'})]];
         }
-        const data = series.volume, unit = 'km³';
+        const data = series.area, unit = 'km²';
         const y0 = cfg.years[0], k = Math.min(Math.max(year - y0, 0), data[0].length - 1);
-        const fmt = (v) => v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v >= 1 ? v.toFixed(2) : v.toPrecision(2);
-        const pct = (v, ref) => !(ref > 0) ? '–' : v <= 0 ? 'gone' : v / ref < 0.01 ? '<1 %' : Math.round(v / ref * 100) + ' %';
+        const t = cfg.t, dec = (x) => x.replace('.', t.decimal);
+        const fmt = (v) => dec(v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v >= 1 ? v.toFixed(2) : v.toPrecision(2));
+        const pct = (v, ref) => !(ref > 0) ? '–' : v <= 0 ? t.gone : v / ref < 0.01 ? '<1 %' : Math.round(v / ref * 100) + ' %';
         const val = keys.map((_, i) => fmt(data[i][k]) + '\\u202f' + unit);
         const share = keys.map((_, i) => pct(data[i][k], data[i][0]));
         const si = keys.indexOf(scenario);
         return [cls, val,
-                keys.map((key, i) => `${cfg.scenario_labels[key]}: ${val[i]} in ${year}, ${share[i]} of ${y0}`),
+                keys.map((key, i) => `${cfg.scenario_labels[key]}: ${val[i]} ${t.in} ${year}, ${share[i]} ${t.of} ${y0}`),
                 [H('Strong', {children: label}), H('Span', {className: 'sc-btn-value', children: si >= 0 ? val[si] : ''}),
                  H('Span', {className: 'sc-btn-chevron', children: '▾'})]];
     }""",

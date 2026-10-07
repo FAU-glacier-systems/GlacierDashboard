@@ -1,4 +1,4 @@
-"""Server callbacks: selection, settings from the URL, and the volume series of the selection."""
+"""Server callbacks: selection, settings from the URL, and the area series of the selection."""
 from dash import Input, Output, State, callback, ctx
 from dash.exceptions import PreventUpdate
 
@@ -44,15 +44,15 @@ def select_glacier(search, picked, current_rgi):
 )
 def set_year(search):
     try:
-        year = int(config.url_params(search).get("year", config.DEFAULT_YEAR))
+        year = int(config.url_params(search).get("year", config.default_year()))
     except ValueError:
-        year = config.DEFAULT_YEAR
-    return year if year in config.YEARS else config.DEFAULT_YEAR
+        year = config.default_year()
+    return year if year in config.YEARS else config.default_year()
 
 
 @callback(Output("series_data", "data"), Input("selected_rgi", "data"))
 def series_data(rgi):
-    """Volume of the selected glacier (or the sum of all), per scenario and year."""
-    arr = SERIES["volume"]
+    """Area of the selected glacier (or the sum of all), per scenario and year."""
+    arr = SERIES["area"]
     data = arr[SERIES_INDEX[rgi]] if rgi in SERIES_INDEX else arr.sum(axis=0)
-    return {"volume": [[float(f"{v:.4g}") for v in row] for row in data]}
+    return {"area": [[float(f"{v:.4g}") for v in row] for row in data]}

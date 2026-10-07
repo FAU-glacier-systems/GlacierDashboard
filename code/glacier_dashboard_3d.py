@@ -19,11 +19,12 @@ import os
 import threading
 
 from dash import Dash
+from flask import request
 
 import legal
 from dash3d import callbacks, clientside, config  # noqa: F401  (callbacks, clientside: register the callbacks)
 from dash3d.api import MAPLIBRE, bp as api_blueprint
-from dash3d.layout import META_TAGS, PAGE_TITLE, make_layout
+from dash3d.layout import META_TAGS, PAGE_TITLE, PAGE_TITLE_DE, lang_of, make_layout
 from dash3d.terrain import warm_dem
 
 app = Dash(
@@ -35,11 +36,27 @@ app = Dash(
     # MapLibre is served from here (assets3d/vendor), so visitors' browsers contact no third party
     external_stylesheets=[f"/static3d/{MAPLIBRE}/maplibre-gl.css", "/static3d/style3d.css"],
     external_scripts=[f"/static3d/{MAPLIBRE}/maplibre-gl.js", "/static3d/map3d.js"],
+    suppress_callback_exceptions=True,             # the page (layout.py) arrives by callback, per language
 )
 server = app.server
 legal.register(server, app.get_asset_url("style.css"))
 server.register_blueprint(api_blueprint)
 app.layout = make_layout(app)
+
+
+_interpolate_index = app.interpolate_index
+
+
+def interpolate_index(**kw):
+    """The HTML page itself in the visitor's language: lang attribute and title (the rest comes by callback)."""
+    page = _interpolate_index(**kw)
+    if lang_of(request.path) == "de":
+        page = page.replace('<html lang="en"', '<html lang="de"', 1).replace(
+            f"<title>{PAGE_TITLE}</title>", f"<title>{PAGE_TITLE_DE}</title>", 1)
+    return page
+
+
+app.interpolate_index = interpolate_index
 
 # Dash sets itself up on the first request and marks that done before it has finished: a request that arrives in
 # parallel (gunicorn runs threads) meanwhile finds no scripts or callbacks registered and fails. Set up now instead.

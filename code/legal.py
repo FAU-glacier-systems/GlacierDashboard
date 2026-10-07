@@ -13,7 +13,7 @@ CONTACT_ADDRESS = "Wetterkreuz 15, 91058 Erlangen"
 
 STATEMENT_DATE = {"de": "07.10.2026", "en": "7 October 2026"}
 
-# slug per page and language; the dashboard is in English, so its footer links to the English pages
+# slug per page and language; the dashboard's footer links to the pages in its own language
 PAGES = {
     "de": {"impressum": "Impressum", "datenschutz": "Datenschutz", "barrierefreiheit": "Barrierefreiheit"},
     "en": {"imprint": "Imprint", "privacy": "Privacy", "accessibility": "Accessibility"},
@@ -22,9 +22,17 @@ OTHER = {"impressum": "imprint", "datenschutz": "privacy", "barrierefreiheit": "
 OTHER.update({v: k for k, v in OTHER.items()})
 
 # where the data sources are listed (the © link on the map)
-SOURCES_URL = "/imprint#sources"
-SOURCES_TITLE = ("Sources: glacier outlines RGI 7.0 (CC BY 4.0); terrain: Terrain Tiles (Mapzen, AWS) "
-                 "incl. EU-DEM (Copernicus) and DGM Austria (CC BY 4.0); map: MapLibre")
+SOURCES_URL = {"en": "/imprint#sources", "de": "/impressum#quellen"}
+SOURCES_TITLE = {
+    "en": ("Sources: glacier outlines RGI 7.0 (CC BY 4.0); terrain: Terrain Tiles (Mapzen, AWS) "
+           "incl. EU-DEM (Copernicus) and DGM Austria (CC BY 4.0); map: MapLibre"),
+    "de": ("Quellen: Gletscherumrisse RGI 7.0 (CC BY 4.0); Gelände: Terrain Tiles (Mapzen, AWS) "
+           "mit EU-DEM (Copernicus) und DGM Österreich (CC BY 4.0); Karte: MapLibre"),
+}
+SOURCES_LABEL = {"en": "Data sources and licences", "de": "Datenquellen und Lizenzen"}
+
+# the dashboard per language (layout.py), and the switch to the other language
+HOME = {"en": "/", "de": "/de"}
 
 
 def _contact(lang):
@@ -154,12 +162,11 @@ Diese Erklärung gilt für <a href="/">www.glacier-evolution.nat.fau.de</a>.</p>
   ausgegeben. Die Kamera lässt sich mit der Tastatur bewegen, Gletscher lassen sich aber nur mit der Maus auf
   der Karte anklicken; Werte an einer Stelle der Karte werden nur beim Überfahren mit der Maus angezeigt.</li>
 <li>Werte werden auf der Karte nur über Farben (mit Farbskala) dargestellt.</li>
-<li>Die Bedienoberfläche ist nur auf Englisch verfügbar; Inhalte in Leichter Sprache und
-  Gebärdensprache werden nicht angeboten.</li>
+<li>Inhalte in Leichter Sprache und Gebärdensprache werden nicht angeboten.</li>
 </ul>
 <p>Mit der Tastatur bedienbar sind: die Suche nach Gletschern (Pfeiltasten und Eingabetaste), die Auswahl der
 dargestellten Größe und des Szenarios, der Jahresregler, das Abspielen der Jahre und die Umschaltung hell/dunkel.
-Das Volumen der Auswahl im gewählten Jahr steht als Text neben dem Szenario.</p>
+Die Fläche der Auswahl im gewählten Jahr steht als Text neben dem Szenario.</p>
 <p>Die Darstellung dreidimensionaler Modelldaten lässt sich nicht gleichwertig in Textform wiedergeben.
 Die zugrunde liegenden Daten stellen wir auf Anfrage in tabellarischer Form zur Verfügung.</p>
 
@@ -269,11 +276,10 @@ with Art. 13 BayBGG, Art. 1 BayBITV and Directive (EU) 2016/2102. This statement
   can be moved with the keyboard, but glaciers can only be clicked on the map with a mouse, and values at a
   point of the map are only shown when hovering with the mouse.</li>
 <li>Values are shown on the map by colour only (with a colour scale).</li>
-<li>The interface is available in English only; content in Easy Language and sign language is not
-  offered.</li>
+<li>Content in Easy Language and sign language is not offered.</li>
 </ul>
 <p>Usable with the keyboard: the glacier search (arrow keys and Enter), the choice of the property shown and
-of the scenario, the year slider, playing the years and the light/dark switch. The volume of the selection in
+of the scenario, the year slider, playing the years and the light/dark switch. The area of the selection in
 the chosen year is shown as text next to the scenario.</p>
 <p>Three-dimensional model data cannot be rendered equivalently as text. We provide the underlying data in
 tabular form on request.</p>
@@ -304,7 +310,7 @@ TEMPLATE = """<!DOCTYPE html>
 </head>
 <body class="legal-page">
 <main class="legal">
-<p class="legal-top"><a href="/">{back}</a><a href="/{other}" lang="{other_lang}" hreflang="{other_lang}">{other_label}</a></p>
+<p class="legal-top"><a href="{home}">{back}</a><a href="/{other}" lang="{other_lang}" hreflang="{other_lang}">{other_label}</a></p>
 <h1>{title}</h1>
 {body}
 <nav class="legal-links">{nav}</nav>
@@ -316,20 +322,22 @@ BACK = {"de": "← Zurück zum Dashboard", "en": "← Back to the dashboard"}
 LANG_LABEL = {"de": "Deutsch", "en": "English"}
 
 
-def legal_links():
-    """Footer links of the (English) dashboard as Dash components: the English pages and the German ones."""
+def legal_links(lang):
+    """Footer links of the dashboard as Dash components: the legal pages in its language, then the dashboard in
+    the other language (map3d.js keeps the current view in that link)."""
     from dash import html
+    other = "en" if lang == "de" else "de"
     return html.Nav(className="legal-links", children=[
-        *[html.A(title, href=f"/{slug}") for slug, title in PAGES["en"].items()],
-        html.A("Deutsch", href="/impressum", lang="de", hrefLang="de"),
+        *[html.A(title, href=f"/{slug}") for slug, title in PAGES[lang].items()],
+        html.A(LANG_LABEL[other], href=HOME[other], lang=other, hrefLang=other, className="lang-switch"),
     ])
 
 
-def sources_link():
+def sources_link(lang):
     """The small © on the map, linking to the data sources."""
     from dash import html
-    return html.A("©", href=SOURCES_URL, className="sources-link", title=SOURCES_TITLE,
-                  **{"aria-label": "Data sources and licences"})
+    return html.A("©", href=SOURCES_URL[lang], className="sources-link", title=SOURCES_TITLE[lang],
+                  **{"aria-label": SOURCES_LABEL[lang]})
 
 
 def register(server, css_url):
@@ -338,5 +346,6 @@ def register(server, css_url):
         nav = "".join(f'<a href="/{slug}">{title}</a>' for slug, title in pages.items())
         for slug, title in pages.items():
             page = TEMPLATE.format(lang=lang, title=title, css=css_url, body=BODIES[slug], nav=nav, back=BACK[lang],
+                                   home=HOME[lang],
                                    other=OTHER[slug], other_lang=other_lang, other_label=LANG_LABEL[other_lang])
             server.add_url_rule(f"/{slug}", endpoint=f"legal_{slug}", view_func=lambda page=page: page)
