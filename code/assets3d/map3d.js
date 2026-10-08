@@ -799,8 +799,8 @@
     if (S.rgi) flyToGlacier(S.rgi, 2500); else flyToOverview();
   }
 
-  // turning the view on a summit: drag with the mouse or one finger (the view follows the pointer); zooming (wheel,
-  // pinch, + and -) changes the field of view, the camera stays. Clicks (on labels, glaciers) still go through: a drag starts after 3 px.
+  // turning the view on a summit: drag with the mouse or one finger (the view follows the pointer), or the arrow
+  // keys; zooming (wheel, pinch, + and -) changes the field of view, the camera stays. Clicks (on labels, glaciers) still go through: a drag starts after 3 px.
   function lookAround(container) {
     const ptrs = new Map();
     let pinch = null, dragging = false, wheelEnd = 0;
@@ -845,14 +845,18 @@
       clearTimeout(wheelEnd);
       wheelEnd = setTimeout(settled, 250);
     }, { passive: false });
-    // keyboard: + and - zoom (the field of view), as MapLibre's keys do elsewhere
+    // keyboard: the arrow keys turn the view (with Shift in larger steps), + and - zoom (the field of view), as
+    // MapLibre's keys pan and zoom elsewhere
     document.addEventListener("keydown", (e) => {
-      if (!active() || e.target.closest && e.target.closest("input, textarea")) return;
+      if (!active() || e.target.closest && e.target.closest("input, textarea, button, [role=button]")) return;
+      const step = e.shiftKey ? 15 : 5;
+      const turn = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] }[e.key];
       const f = { "+": 0.8, "=": 0.8, "-": 1.25, "_": 1.25 }[e.key];
-      if (!f) return;
+      if (!turn && !f) return;
       e.preventDefault();
       S.quiet = true;
-      standFov(S.map.getVerticalFieldOfView() * f);
+      if (turn) standView(S.stand.bearing + turn[0], S.stand.pitch + turn[1]);
+      else standFov(S.map.getVerticalFieldOfView() * f);
       clearTimeout(wheelEnd);
       wheelEnd = setTimeout(settled, 250);
     });
@@ -1043,6 +1047,35 @@
     } else if (at >= 0 && (e.key.length === 1 || e.key === "Backspace")) {
       input.focus();                         // the key then lands in the field
     }
+  });
+
+  // ---------------------------------------------------------------- a new version after a restart
+  // The page knows the version it was built with (cfg.version); after a restart with new code its callbacks may
+  // no longer exist on the server. Checked every 5 minutes, when the tab comes back, and right after a failed
+  // callback; if the server's differs, a note offers to reload (the address keeps the view).
+  function checkVersion() {
+    if (!S.cfg || S.updateShown) return;
+    fetch(origin() + "/api3d/version", { cache: "no-store" }).then((r) => r.ok ? r.text() : null).then((v) => {
+      if (v && v.trim() !== S.cfg.version) showUpdate();
+    }).catch(() => {});
+  }
+  function showUpdate() {
+    const stack = document.querySelector(".bottom-stack");
+    if (!stack || S.updateShown) return;
+    S.updateShown = true;
+    const el = document.createElement("div");
+    el.className = "float update-note";
+    el.setAttribute("role", "status");
+    el.innerHTML = `<span>${esc(S.cfg.t.update)}</span><button class="btn">${esc(S.cfg.t.reload)}</button>`;
+    el.querySelector("button").addEventListener("click", () => window.location.reload());
+    stack.insertBefore(el, stack.firstChild);
+  }
+  setInterval(checkVersion, 5 * 60 * 1000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) checkVersion(); });
+  const fetch0 = window.fetch.bind(window);
+  window.fetch = (...a) => fetch0(...a).then((r) => {
+    if (!r.ok && String((a[0] && a[0].url) || a[0]).includes("_dash-update-component")) checkVersion();
+    return r;
   });
 
   window.Map3D = {

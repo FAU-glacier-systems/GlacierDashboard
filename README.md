@@ -17,6 +17,7 @@ Live at https://www.glacier-evolution.nat.fau.de. This branch is what runs on th
 | `deploy/` | systemd unit, gunicorn and nginx config, and how to operate the server ([deploy/README.md](deploy/README.md)) |
 | `tools/build_glacier_store.py` | builds the read-optimised data store the 3D app reads |
 | `tools/compress_netcdf.py` | lossless NetCDF recompression (about 5× smaller, bit-exact verified) |
+| `tools/smoke_test.py` | headless-browser check of the main functions (search, summit view, labels, German, legal pages) |
 | `tools/build_peaks.py` | builds the peak list for the search from OpenStreetMap (notable peaks within 3 km of a glacier) |
 | `data/glacier_location_and_name/` | glacier names, countries, coordinates |
 | `data/peaks/` | the peak list (© OpenStreetMap contributors, ODbL): name, summit camera, glacier looked at |

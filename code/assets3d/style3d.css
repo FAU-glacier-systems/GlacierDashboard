@@ -223,6 +223,12 @@ html[data-theme="light"] .logo-corner .logo-erc-light { display: block; }
 }
 .city-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--fg); box-shadow: 0 0 0 1.5px var(--bg); }
 
+/* After a restart with new code (map3d.js): offer a reload */
+.update-note {
+  display: flex; align-items: center; gap: 12px; padding: 8px 10px 8px 14px; font-size: 13px; color: var(--fg);
+  background: var(--bg); border: 1px solid var(--accent); border-radius: 8px;
+}
+
 /* On a summit: the way back down, bottom right above the dock */
 .peak-exit {
   align-self: flex-end; pointer-events: auto; display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; cursor: pointer;

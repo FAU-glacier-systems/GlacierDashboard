@@ -6,7 +6,7 @@ from dash import Input, Output, callback, dcc, html
 from . import config
 import legal
 
-from .api import PEAKS_URL
+from .api import BUILD, PEAKS_URL
 from .colours import VAR_STYLE, colour_stops, var_config
 from .store import ALPS_BOUNDS, GLACIERS
 from .terrain import DEM_MAXZOOM, TERRAIN_VERSION
@@ -67,6 +67,7 @@ TEXTS = {
         "more": "more – keep typing", "none": "Nothing found", "peak": "Peak",
         "peak_tip": "Click to stand on the summit",
         "peak_exit": "Leave summit", "peak_exit_tip": "Back to the glacier view",
+        "update": "A new version of this page is available.", "reload": "Reload",
         "in": "in", "of": "of", "gone": "gone", "decimal": ".",
         "thickness": "Thickness", "compass": "Drag to rotate the map; click to turn north and flat, click again to turn back",
     },
@@ -87,11 +88,12 @@ TEXTS = {
         "more": "weitere – weiter tippen", "none": "Nichts gefunden", "peak": "Gipfel",
         "peak_tip": "Klicken, um auf dem Gipfel zu stehen",
         "peak_exit": "Gipfel verlassen", "peak_exit_tip": "Zurück zur Gletscheransicht",
+        "update": "Eine neue Version dieser Seite ist verfügbar.", "reload": "Neu laden",
         "in": "im Jahr", "of": "von", "gone": "verschwunden", "decimal": ",",
         "thickness": "Eisdicke", "compass": "Ziehen, um die Karte zu drehen; klicken für Norden und flach, erneut klicken für zurück",
     },
 }
-BROWSER_TEXTS = ("more", "none", "peak", "peak_tip", "in", "of", "gone", "decimal", "thickness", "theme", "play", "pause", "compass")
+BROWSER_TEXTS = ("more", "none", "peak", "peak_tip", "update", "reload", "in", "of", "gone", "decimal", "thickness", "theme", "play", "pause", "compass")
 
 # [rgi, name] of all glaciers, named ones first (alphabetically), then the unnamed ones by RGI ID
 SEARCH_LIST = sorted(([r, config.GLACIER_NAMES.get(r, "")] for r in GLACIERS),
@@ -112,6 +114,7 @@ _MAP_CONFIG = {
     "meshes": {r: {**g.mesh_info(), "k": k} for k, (r, g) in enumerate(GLACIERS.items())},
     "scenario_labels": config.SCENARIO_LABELS,
     "search": SEARCH_LIST,
+    "version": BUILD,                  # map3d.js offers a reload when the server's differs (api.py)
     "peaks_url": PEAKS_URL if config.PEAKS else None,   # loaded when the search is first used (map3d.js)
     "years": [config.YEARS[0], config.YEARS[-1]],
 }

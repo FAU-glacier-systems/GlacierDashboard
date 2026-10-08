@@ -30,6 +30,14 @@ _PEAKS = gzip.compress(json.dumps(
      for p in config.PEAKS], ensure_ascii=False, separators=(",", ":")).encode(), compresslevel=9, mtime=0)
 PEAKS_URL = f"/api3d/peaks/{hashlib.sha1(_PEAKS).hexdigest()[:10]}.json"
 
+# The version of what is deployed: a hash of the code, assets and peak list, the same in every worker. A page
+# carries the one it was built with (layout.py); map3d.js compares it with /api3d/version and asks the visitor to
+# reload once a restart brought new code, instead of failing on callbacks that no longer exist.
+_h = hashlib.sha1(_PEAKS)
+for _f in sorted(p for p in config.CODE_DIR.rglob("*") if p.suffix in (".py", ".js", ".css") and p.is_file()):
+    _h.update(str(_f.relative_to(config.CODE_DIR)).encode() + _f.read_bytes())
+BUILD = _h.hexdigest()[:12]
+
 
 def _ids_arg():
     """ids=K:stride,K:stride,... -> [(rgi, stride)]. K is the glacier's index in GLACIER_IDS (keeps the URL
@@ -61,6 +69,11 @@ def api_terrain(version, z, x, y):
     if version != TERRAIN_VERSION or not (0 <= z <= DEM_MAXZOOM and 0 <= x < 2 ** z and 0 <= y < 2 ** z):
         abort(404)
     return Response(merged_terrain(z, x, y), mimetype="image/png", headers={"Cache-Control": "public, max-age=604800"})
+
+
+@bp.route("/api3d/version")
+def api_version():
+    return Response(BUILD, mimetype="text/plain", headers={"Cache-Control": "no-store"})   # not cached by nginx
 
 
 @bp.route("/api3d/peaks/<version>.json")

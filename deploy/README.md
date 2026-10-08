@@ -18,12 +18,17 @@ browser ──HTTPS──> nginx (:443, TLS, gzip, cache) ──> gunicorn 127.0
 
 | Task | Command |
 |---|---|
+| Test before deploying | `cd code && DASH_PORT=8060 python glacier_dashboard_3d.py &` then `python tools/smoke_test.py` (see its docstring) |
 | Deploy code changes | `sudo systemctl restart glacierdash` |
 | Status / memory | `systemctl status glacierdash` |
 | Live logs | `journalctl -u glacierdash -f` |
 | Stop / start | `sudo systemctl stop glacierdash` / `sudo systemctl start glacierdash` |
 | After editing the unit file | `sudo cp deploy/glacierdash.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl restart glacierdash` |
 | After editing nginx | `sudo nginx -t && sudo systemctl reload nginx` |
+
+After a restart with new code, open pages show "A new version of this page is available – Reload" (map3d.js
+compares the version the page was built with against `/api3d/version`), instead of failing on callbacks that
+changed. Pages opened before this check existed still need a manual reload once.
 
 ## Local development
 
