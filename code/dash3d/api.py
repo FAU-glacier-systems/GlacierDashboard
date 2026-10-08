@@ -1,5 +1,8 @@
-"""Flask routes for map3d.js: its static files, terrain tiles, and the bedrock and ice of the glaciers in view."""
+"""Flask routes for map3d.js: its static files, terrain tiles, the bedrock and ice of the glaciers in view, and the
+peak list for the search."""
 import gzip
+import hashlib
+import json
 
 import numpy as np
 from flask import Blueprint, Response, abort, request, send_from_directory
@@ -14,6 +17,18 @@ ASSETS3D_DIR = config.CODE_DIR / "assets3d"
 MAPLIBRE = "vendor/maplibre-gl-5.24.0"
 
 bp = Blueprint("api3d", __name__)
+
+
+# The peaks for the search (config.PEAKS), loaded by map3d.js only when the search is first used, so the page
+# itself does not grow: [id, name, elevation (m, or null), its other names (" / ", or ""), camera [lon, lat, m],
+# point looked at [lon, lat, m], name of the glacier looked at, label score (0: no label on the map)]. Gzipped once; the URL holds a hash of the list,
+# so browsers and nginx may keep it for a week.
+_PEAKS = gzip.compress(json.dumps(
+    [[p["id"], p["name"], p["ele"], " / ".join(p["alt"]), [round(v, 4) for v in p["cam"][:2]] + [p["cam"][2]],
+      [round(v, 4) for v in p["look"][:2]] + [p["look"][2]], config.GLACIER_NAMES.get(p["glacier"], ""),
+      p["score"] if p["label"] else 0]
+     for p in config.PEAKS], ensure_ascii=False, separators=(",", ":")).encode(), compresslevel=9, mtime=0)
+PEAKS_URL = f"/api3d/peaks/{hashlib.sha1(_PEAKS).hexdigest()[:10]}.json"
 
 
 def _ids_arg():
@@ -46,6 +61,14 @@ def api_terrain(version, z, x, y):
     if version != TERRAIN_VERSION or not (0 <= z <= DEM_MAXZOOM and 0 <= x < 2 ** z and 0 <= y < 2 ** z):
         abort(404)
     return Response(merged_terrain(z, x, y), mimetype="image/png", headers={"Cache-Control": "public, max-age=604800"})
+
+
+@bp.route("/api3d/peaks/<version>.json")
+def api_peaks(version):
+    if f"/api3d/peaks/{version}.json" != PEAKS_URL:
+        abort(404)
+    return Response(_PEAKS, mimetype="application/json",
+                    headers={"Content-Encoding": "gzip", "Cache-Control": "public, max-age=604800"})
 
 
 @bp.route("/api3d/beds")

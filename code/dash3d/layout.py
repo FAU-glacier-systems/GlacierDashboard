@@ -6,6 +6,7 @@ from dash import Input, Output, callback, dcc, html
 from . import config
 import legal
 
+from .api import PEAKS_URL
 from .colours import VAR_STYLE, colour_stops, var_config
 from .store import ALPS_BOUNDS, GLACIERS
 from .terrain import DEM_MAXZOOM, TERRAIN_VERSION
@@ -51,7 +52,7 @@ N = len(GLACIERS)
 TEXTS = {
     "en": {
         "cbar_title": "Click to choose what the colours show",
-        "search": f"Search {N} glaciers…",
+        "search": "Search glaciers and peaks…",
         "show_all": "Show all glaciers",
         "title": "Alpine glaciers in ", "title_tip": "Back to all glaciers",
         "theme": "Switch light/dark theme",
@@ -63,13 +64,15 @@ TEXTS = {
         "play": " Play", "pause": " Pause", "play_tip": "Play or pause the years",
         "funded": "Funded by the European Union · European Research Council",
         # in the browser
-        "more": "more – keep typing", "none": "No glacier found",
+        "more": "more – keep typing", "none": "Nothing found", "peak": "Peak",
+        "peak_tip": "Click to stand on the summit",
+        "peak_exit": "Leave summit", "peak_exit_tip": "Back to the glacier view",
         "in": "in", "of": "of", "gone": "gone", "decimal": ".",
         "thickness": "Thickness", "compass": "Drag to rotate the map; click to turn north and flat, click again to turn back",
     },
     "de": {
         "cbar_title": "Klicken, um zu wählen, was die Farben zeigen",
-        "search": f"{N} Gletscher durchsuchen…",
+        "search": "Gletscher und Gipfel suchen…",
         "show_all": "Alle Gletscher zeigen",
         "title": "Alpengletscher ", "title_tip": "Zurück zu allen Gletschern",
         "theme": "Hell/dunkel umschalten",
@@ -81,16 +84,19 @@ TEXTS = {
         "scenario": "RCP-Szenario", "scenario_tip": "Klicken, um das Treibhausgas-Szenario zu wählen",
         "play": " Start", "pause": " Pause", "play_tip": "Jahre abspielen oder anhalten",
         "funded": "Gefördert von der Europäischen Union · Europäischer Forschungsrat",
-        "more": "weitere – weiter tippen", "none": "Kein Gletscher gefunden",
+        "more": "weitere – weiter tippen", "none": "Nichts gefunden", "peak": "Gipfel",
+        "peak_tip": "Klicken, um auf dem Gipfel zu stehen",
+        "peak_exit": "Gipfel verlassen", "peak_exit_tip": "Zurück zur Gletscheransicht",
         "in": "im Jahr", "of": "von", "gone": "verschwunden", "decimal": ",",
         "thickness": "Eisdicke", "compass": "Ziehen, um die Karte zu drehen; klicken für Norden und flach, erneut klicken für zurück",
     },
 }
-BROWSER_TEXTS = ("more", "none", "in", "of", "gone", "decimal", "thickness", "theme", "play", "pause", "compass")
+BROWSER_TEXTS = ("more", "none", "peak", "peak_tip", "in", "of", "gone", "decimal", "thickness", "theme", "play", "pause", "compass")
 
 # [rgi, name] of all glaciers, named ones first (alphabetically), then the unnamed ones by RGI ID
 SEARCH_LIST = sorted(([r, config.GLACIER_NAMES.get(r, "")] for r in GLACIERS),
                      key=lambda e: (not e[1], e[1].lower(), e[0]))
+
 
 
 def play_label(lang):
@@ -106,9 +112,11 @@ _MAP_CONFIG = {
     "meshes": {r: {**g.mesh_info(), "k": k} for k, (r, g) in enumerate(GLACIERS.items())},
     "scenario_labels": config.SCENARIO_LABELS,
     "search": SEARCH_LIST,
+    "peaks_url": PEAKS_URL if config.PEAKS else None,   # loaded when the search is first used (map3d.js)
     "years": [config.YEARS[0], config.YEARS[-1]],
 }
 MAP_CONFIG = {lang: {**_MAP_CONFIG, "lang": lang, "vars": {v: var_config(v, lang) for v in VAR_STYLE},
+                     "cities": [[en if lang == "en" else de, lon, lat] for en, de, lon, lat in config.CITIES],
                      "t": {k: TEXTS[lang][k] for k in BROWSER_TEXTS}} for lang in config.LANGS}
 
 
@@ -136,7 +144,9 @@ def make_page(app, lang):
             dcc.Store(id="url_sync"),
             dcc.Store(id="selected_rgi"),
             dcc.Store(id="rgi_select"),        # a glacier picked in the search or on the map: {rgi, t}
-            dcc.Store(id="glacier_hits"),      # the RGI IDs shown in the search results
+            dcc.Store(id="glacier_hits"),      # the IDs (RGI or peak) shown in the search results
+            dcc.Store(id="peaks_ready"),       # set by map3d.js once the peak list has loaded
+            dcc.Store(id="peak_sel"),          # the summit the camera stands on (map3d.js): {id, name, sub}
             dcc.Store(id="property"),          # chosen by clicking the colour bar
             dcc.Store(id="scenario"),          # chosen with the scenario buttons
             dcc.Store(id="map_config", data=MAP_CONFIG[lang]),
@@ -204,6 +214,11 @@ def make_page(app, lang):
                     ]),
                     html.Button(T["intro_ok"], id="intro_close", className="btn"),
                 ]),
+
+                # on a summit (map3d.js, peak_sel): the way back down, bottom right above the dock; clientside.py shows it and calls leavePeak
+                html.Button(id="peak_exit", n_clicks=0, className="peak-exit is-hidden", title=T["peak_exit_tip"],
+                            children=[html.Span("↩", className="peak-exit-icon", **{"aria-hidden": "true"}),
+                                      T["peak_exit"]]),
 
                 # the temporal choices in one line: play, slider, scenario
                 html.Div(className="float dock", children=[

@@ -25,9 +25,11 @@ OTHER.update({v: k for k, v in OTHER.items()})
 SOURCES_URL = {"en": "/imprint#sources", "de": "/impressum#quellen"}
 SOURCES_TITLE = {
     "en": ("Sources: glacier outlines RGI 7.0 (CC BY 4.0); terrain: Terrain Tiles (Mapzen, AWS) "
-           "incl. EU-DEM (Copernicus) and DGM Austria (CC BY 4.0); map: MapLibre"),
+           "incl. EU-DEM (Copernicus) and DGM Austria (CC BY 4.0); peaks: © OpenStreetMap contributors (ODbL); "
+           "map: MapLibre"),
     "de": ("Quellen: Gletscherumrisse RGI 7.0 (CC BY 4.0); Gelände: Terrain Tiles (Mapzen, AWS) "
-           "mit EU-DEM (Copernicus) und DGM Österreich (CC BY 4.0); Karte: MapLibre"),
+           "mit EU-DEM (Copernicus) und DGM Österreich (CC BY 4.0); Gipfel: © OpenStreetMap-Mitwirkende (ODbL); "
+           "Karte: MapLibre"),
 }
 SOURCES_LABEL = {"en": "Data sources and licences", "de": "Datenquellen und Lizenzen"}
 
@@ -68,6 +70,9 @@ _TERRAIN = '<a href="https://registry.opendata.aws/terrain-tiles/">Terrain Tiles
 _TERRAIN_CREDIT = ("Produced using Copernicus data and information funded by the European Union – EU-DEM layers; "
                    "© offene Daten Österreichs – Digitales Geländemodell (DGM) Österreich")
 _TERRAIN_ALL = '<a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md">'
+_OSM = ('© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>-Mitwirkende',
+        '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors')
+_ODBL = '<a href="https://opendatacommons.org/licenses/odbl/1-0/">ODbL 1.0</a>'
 _FRAGILE = '<a href="https://cordis.europa.eu/project/id/948290">FRAGILE</a>'
 
 BODIES = {
@@ -92,6 +97,7 @@ Hochschulinnovationsgesetzes (BayHIG) eine staatliche Einrichtung und zugleich e
 <p>Gletscherumrisse: {_RGI} ({_CC_BY}).</p>
 <p>Geländemodell: {_TERRAIN} aus SRTM, GMTED2010, ETOPO1 und EU-DEM, ergänzt um das Gletscherbett aus den
 Modellrechnungen. Enthält: {_TERRAIN_CREDIT} ({_CC_BY}). {_TERRAIN_ALL}Vollständige Quellenangaben</a>.</p>
+<p>Gipfel in der Suche: {_OSM[0]} ({_ODBL}).</p>
 <p>Kartenbibliothek: <a href="https://maplibre.org">MapLibre GL JS</a> (BSD-3-Clause).</p>
 
 <h2>Förderung</h2>
@@ -211,6 +217,7 @@ President, Prof. Dr. Joachim Hornegger.</p>
 <p>Glacier outlines: {_RGI} ({_CC_BY}).</p>
 <p>Terrain: {_TERRAIN} from SRTM, GMTED2010, ETOPO1 and EU-DEM, with the glacier bed from the model runs
 merged in. Contains: {_TERRAIN_CREDIT} ({_CC_BY}). {_TERRAIN_ALL}Full attribution</a>.</p>
+<p>Peaks in the search: {_OSM[1]} ({_ODBL}).</p>
 <p>Map library: <a href="https://maplibre.org">MapLibre GL JS</a> (BSD-3-Clause).</p>
 
 <h2>Funding</h2>

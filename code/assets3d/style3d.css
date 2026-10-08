@@ -215,6 +215,37 @@ html[data-theme="light"] .logo-corner .logo-erc-light { display: block; }
 .glacier-tip .tip-name { font-weight: 600; }
 .glacier-tip .tip-here { font-variant-numeric: tabular-nums; }
 .glacier-tip b { font-weight: 600; }
+/* City labels (map3d.js): a dot and the name, for orientation; clicks pass through to the map */
+.city-label { display: flex; flex-direction: column; align-items: center; gap: 2px; pointer-events: none; }
+.city-name {
+  font-size: 11px; font-style: italic; line-height: 1.2; white-space: nowrap; color: var(--fg);
+  text-shadow: 0 0 2px var(--bg), 0 0 4px var(--bg), 0 0 8px var(--bg);
+}
+.city-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--fg); box-shadow: 0 0 0 1.5px var(--bg); }
+
+/* On a summit: the way back down, bottom right above the dock */
+.peak-exit {
+  align-self: flex-end; pointer-events: auto; display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; cursor: pointer;
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--fg); border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent); border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.peak-exit:hover, .peak-exit:focus-visible { border-color: var(--accent); }
+.peak-exit.is-hidden { display: none; }
+.peak-exit-icon { font-size: 15px; line-height: 1; }
+
+/* Peak labels (map3d.js): name and height above the summit, a dashed line down to it; a click stands there */
+.peak-label { display: flex; flex-direction: column; align-items: center; cursor: pointer; }
+.peak-text {
+  padding: 1px 6px; font-size: 11px; line-height: 1.35; white-space: nowrap; color: var(--fg); border-radius: 6px;
+  background: color-mix(in srgb, var(--bg) 60%, transparent); border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+}
+.peak-name { font-weight: 600; }
+.peak-ele { color: var(--muted); font-variant-numeric: tabular-nums; }
+.peak-stem { width: 0; border-left: 1.5px dashed var(--fg); opacity: 0.75; }
+.peak-label:hover .peak-text { border-color: var(--accent); }
+.peak-label:hover .peak-stem { border-left-color: var(--accent); opacity: 1; }
 .app3d .maplibregl-ctrl-attrib { font-size: 9px; line-height: 1.3; }
 html[data-theme="dark"] .maplibregl-ctrl-group { background: #1a1a1a; }
 html[data-theme="dark"] .maplibregl-ctrl-group button + button { border-top-color: #333; }

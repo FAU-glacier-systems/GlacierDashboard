@@ -19,6 +19,7 @@
     firstFlyDone: false,
   };
   const origin = () => window.location.origin;
+  const MAX_PITCH = 85;      // up to near the horizon, for the view from a summit
   const LIGHT = normalize([-0.55, 0.55, 0.65]);   // from the north-west, as on maps
   // The terrain under the ice is a raster resampled from the model bedrock; the coarser the terrain tiles (the
   // further away), the more it smooths narrow valleys upwards. Lift the ice by about a tenth of the terrain
@@ -368,13 +369,14 @@
   }
 
   // ---------------------------------------------------------------- camera in the address bar
-  // ?view=lon,lat,zoom,bearing,pitch, so a shared link opens the same view
+  // ?view=lon,lat,zoom,bearing,pitch, so a shared link opens the same view; ?peak=<id> while standing on a
+  // summit (the link then stands there, facing as in view)
   function viewFromUrl() {
     const v = (new URLSearchParams(window.location.search).get("view") || "").split(",").map(Number);
     if (v.length !== 5 || v.some((x) => !Number.isFinite(x))) return null;
     const [lng, lat, zoom, bearing, pitch] = v;
     if (Math.abs(lng) > 180 || Math.abs(lat) > 85 || zoom < 0 || zoom > 22) return null;
-    return { center: [lng, lat], zoom, bearing, pitch: Math.min(Math.max(pitch, 0), 80) };
+    return { center: [lng, lat], zoom, bearing, pitch: Math.min(Math.max(pitch, 0), MAX_PITCH) };
   }
 
   function viewToUrl() {
@@ -382,6 +384,7 @@
     const v = [c.lng.toFixed(4), c.lat.toFixed(4), m.getZoom().toFixed(2), m.getBearing().toFixed(0), m.getPitch().toFixed(0)];
     const p = new URLSearchParams(window.location.search);
     p.set("view", v.join(","));
+    if (standId()) p.set("peak", standId()); else p.delete("peak");
     window.history.replaceState(window.history.state, "", window.location.pathname + "?" + p.toString());
   }
 
@@ -423,11 +426,19 @@
                projection: { type: ["interpolate", ["linear"], ["zoom"], 9, "vertical-perspective", 10, "mercator"] },
                transition: { duration: 0, delay: 0 } },
       ...(S.urlView || { bounds: cfg.alps_bounds, fitBoundsOptions: { padding: 30 } }),
-      maxPitch: 80,
+      maxPitch: MAX_PITCH,
       attributionControl: false,
       locale: { "NavigationControl.ResetBearing": cfg.t.compass },   // the compass tooltip, in the page's language
     });
     S.map = map;
+    S.fov0 = map.getVerticalFieldOfView();     // MapLibre's default; a summit view is wider (STAND_FOV)
+    S.urlPeak = new URLSearchParams(window.location.search).get("peak");   // a link that stands on a summit
+    // such a link keeps its view while the page loads (the selection can arrive in steps, which would otherwise
+    // count as a new glacier and fly there), until the visitor first does something
+    S.holdView = !!S.urlPeak;
+    for (const ev of ["pointerdown", "keydown", "wheel"])
+      document.addEventListener(ev, () => { S.holdView = false; }, { capture: true, once: true });
+    lookAround(map.getCanvasContainer());
     window._map3d = map;   // handy for debugging in the console
     map.addControl(themeControl(), "top-right");   // above the zoom buttons
     map.addControl(new maplibregl.NavigationControl({ showZoom: false, visualizePitch: true }), "top-right");   // compass only
@@ -451,22 +462,32 @@
         if (hoverFrame) return;
         hoverFrame = requestAnimationFrame(() => {
           hoverFrame = 0;
-          const rgi = pickGlacier(e);
-          map.getCanvas().style.cursor = rgi ? "pointer" : "";
+          const onLabel = e.originalEvent.target.closest && e.originalEvent.target.closest(".peak-label");
+          const rgi = onLabel ? null : pickGlacier(e);
+          map.getCanvas().style.cursor = rgi && !standId() ? "pointer" : "";   // on a summit glaciers are not picked
           S.hover = rgi ? { rgi, lngLat: e.lngLat } : null;
           showHover();
         });
       });
       map.on("mouseout", () => { S.hover = null; showHover(); });
       map.on("click", (e) => {
+        if (e.originalEvent.target.closest && e.originalEvent.target.closest(".peak-label")) return;
+        if (standId()) return;   // on a summit a click on a glacier does not select it (the hover label still shows it)
         const rgi = pickGlacier(e);
         if (rgi && window.dash_clientside && window.dash_clientside.set_props) {
           window.dash_clientside.set_props("rgi_select", { data: { rgi, t: Date.now() } });
         }
       });
-      map.on("moveend", () => { sync(); viewToUrl(); });
+      map.on("moveend", () => {
+        if (S.flight || S.quiet) return;    // summit flight or turning: settled() catches up when it rests
+        sync(); viewToUrl();
+        if (map.getZoom() >= PEAK_ZOOM) loadPeaks();
+        updatePeakLabels();
+      });
 
       S.loaded = true;
+      if (S.urlPeak) loadPeaks();
+      map.once("idle", updatePeakLabels);      // the city labels, before any move
       showIntro();
       apply();
     });
@@ -586,6 +607,11 @@
     const cam = () => ({ center: map.getCenter(), zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() });
     map.getContainer().addEventListener("click", (e) => {
       if (!e.target.closest || !e.target.closest(".maplibregl-ctrl-compass")) return;
+      if (S.stand || S.flight) {                           // on a summit: turn the view, the camera stays
+        e.stopPropagation();
+        if (S.stand) turnStand(0, 90);
+        return;
+      }
       if (before && (!after || same(cam(), after))) {      // also while the reset is still turning
         e.stopPropagation();
         map.easeTo({ bearing: before.bearing, pitch: before.pitch, duration: 1000 });
@@ -629,6 +655,7 @@
   function flyToGlacier(rgi, duration) {
     const m = S.cfg.meshes[rgi];
     if (!m) return;
+    leaveStand();
     const b = m.bbox;
     const cam = S.map.cameraForBounds([[b[0], b[1]], [b[2], b[3]]], { padding: framePadding() });
     if (!cam) return;
@@ -636,7 +663,312 @@
                   bearing: facingBearing(m.aspect), duration, essential: true });
   }
 
+  // ---------------------------------------------------------------- standing on a summit
+  // A peak from the search or a label: the camera stands just above the summit with a wide view, first looking at
+  // ice of a glacier below (see tools/build_peaks.py). There it stays: dragging (mouse, one finger) turns the
+  // view, the wheel or a pinch narrows or widens it, the compass turns it north and level. The search's ×, the
+  // title, a glacier or another peak leave. MapLibre's own flights take the height of the destination from the
+  // terrain loaded when they start (still coarse there, often far too low) and keep the camera where they end,
+  // so it could end inside the mountain: this flight sets the camera's position itself in every frame, and the
+  // map's centre is not clamped to the ground while flying or standing.
+  const M_PER_DEG = 111320, STAND_FOV = 60, FOV_RANGE = [20, 100], STAND_PITCH = 100;   // up to 10° above level
+  const CONTROLS = ["dragPan", "dragRotate", "scrollZoom", "touchZoomRotate", "touchPitch", "doubleClickZoom",
+                    "keyboard", "boxZoom"];
+  const clamp = (x, a, b) => Math.min(Math.max(x, a), b);
+
+  // camera options that put the camera at lng, lat, alt (m) looking along bearing and pitch: aimed at the point
+  // where that line reaches the height ground (m), so nothing depends on terrain that has not loaded yet and the
+  // map's centre and zoom stay sensible (at least 0.5 km away, at most 300 km when the line runs almost level)
+  function cameraAt(lng, lat, alt, bearing, pitch, ground) {
+    const b = bearing * Math.PI / 180, p = pitch * Math.PI / 180;
+    const level = Math.cos(p) < 0.05, along = (alt - ground) / Math.max(Math.cos(p), 1e-3);
+    const D = Math.max(level ? Math.min(along, 300000) : along, 500), h = D * Math.sin(p);
+    const to = new maplibregl.LngLat(lng + h * Math.sin(b) / (M_PER_DEG * Math.cos(lat * Math.PI / 180)),
+                                     lat + h * Math.cos(b) / M_PER_DEG);
+    return S.map.calculateCameraOptionsFromTo(new maplibregl.LngLat(lng, lat), alt, to, alt - D * Math.cos(p));
+  }
+
+  function jumpCamera(o) {
+    S.map.jumpTo({ center: o.center, zoom: o.zoom, bearing: o.bearing, pitch: o.pitch, elevation: o.elevation });
+  }
+
+  // where the camera is now (position, height in m, direction)
+  function cameraNow() {
+    const m = S.map, t = m.transform, lat = m.getCenter().lat, c = t.getCameraLngLat();
+    const perMetre = t.worldSize / (40075016.686 * Math.cos(lat * Math.PI / 180));
+    return { lng: c.lng, lat: c.lat, alt: t.elevation + t.cameraToCenterDistance * Math.cos(m.getPitch() * Math.PI / 180) / perMetre,
+             bearing: m.getBearing(), pitch: m.getPitch() };
+  }
+
+  const standId = () => (S.stand && S.stand.id) || (S.flight && S.flight.id) || null;
+
+  // the search field shows the peak like its result entry (clientside.py); null when leaving
+  function peakSel(p) {
+    if (!window.dash_clientside || !window.dash_clientside.set_props) return;
+    window.dash_clientside.set_props("peak_sel", { data: p ? {
+      id: p[0], name: p[1], sub: [S.cfg.t.peak, p[2] != null ? `${p[2]} m` : "", p[6]].filter((x) => x).join(" · ") } : null });
+  }
+
+  function flyToPeak(id, opts = {}) {
+    const p = (S.peaks || []).find((e) => e[0] === id);
+    if (!p || !S.map) return;
+    const [cam, look] = [p[4], p[5]], map = S.map;
+    if (S.flight) cancelAnimationFrame(S.flight.frame);
+    const a = { ...cameraNow(), fov: map.getVerticalFieldOfView() }, g0 = map.transform.elevation;
+    // the direction from the summit to the glacier point; a link's view (opts) keeps its own direction
+    const dir = map.calculateCameraOptionsFromTo(new maplibregl.LngLat(cam[0], cam[1]), cam[2],
+                                                 new maplibregl.LngLat(look[0], look[1]), look[2]);
+    const b = { lng: cam[0], lat: cam[1], alt: cam[2], bearing: opts.bearing ?? dir.bearing,
+                pitch: clamp(opts.pitch ?? dir.pitch, 0, STAND_PITCH), fov: STAND_FOV };
+    const turn = ((b.bearing - a.bearing + 540) % 360) - 180;              // the short way round
+    const km = Math.hypot((b.lng - a.lng) * Math.cos(b.lat * Math.PI / 180), b.lat - a.lat) * M_PER_DEG / 1000;
+    const rise = Math.min(km * 250, 15000);                                  // up and over on longer flights
+    const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const duration = reduced || opts.instant ? 0 : Math.min(2500 + km * 40, 6000), t0 = performance.now();
+    const ease = (k) => k < 0.5 ? 4 * k * k * k : 1 - (-2 * k + 2) ** 3 / 2;
+    map.stop();
+    for (const c of CONTROLS) map[c].disable();
+    map.getCanvasContainer().style.touchAction = "none";   // fingers turn the view (lookAround), not the page
+    map.setCenterClampedToGround(false);
+    map.setMaxPitch(STAND_PITCH);
+    S.stand = null;
+    S.flight = { id };
+    peakSel(p);
+    const step = () => {
+      const k = duration ? Math.min((performance.now() - t0) / duration, 1) : 1, e = ease(k);
+      map.setVerticalFieldOfView(a.fov + (b.fov - a.fov) * e);
+      if (k < 1) {
+        jumpCamera(cameraAt(a.lng + (b.lng - a.lng) * e, a.lat + (b.lat - a.lat) * e,
+                            a.alt + (b.alt - a.alt) * e + rise * Math.sin(Math.PI * e),
+                            a.bearing + turn * e, a.pitch + (b.pitch - a.pitch) * e, g0 + (look[2] - g0) * e));
+        S.flight.frame = requestAnimationFrame(step);
+        return;
+      }
+      S.flight = null;
+      S.stand = { id, lng: b.lng, lat: b.lat, alt: b.alt, ground: look[2], bearing: b.bearing, pitch: b.pitch };
+      standView(b.bearing, b.pitch);
+      settled();
+    };
+    step();
+  }
+
+  // turn the view on the summit
+  function standView(bearing, pitch) {
+    const s = S.stand;
+    s.bearing = ((bearing % 360) + 360) % 360;
+    s.pitch = clamp(pitch, 0, STAND_PITCH);
+    const t = S.map.transform;
+    t.clearNearFarZOverride();                // MapLibre's far plane for this view...
+    jumpCamera(cameraAt(s.lng, s.lat, s.alt, s.bearing, s.pitch, s.ground));
+    // ...but a near one STAND_NEAR m ahead: MapLibre puts it at a fixed share of the distance to the map's centre
+    // (tens of metres here), which cuts away the summit right in front of the camera, so one looks into the mountain
+    const perMetre = t.worldSize / (40075016.686 * Math.cos(S.map.getCenter().lat * Math.PI / 180));
+    t.overrideNearFarZ(STAND_NEAR * perMetre, t.farZ);
+  }
+  const STAND_NEAR = 5;
+
+  function standFov(fov) {
+    S.map.setVerticalFieldOfView(clamp(fov, FOV_RANGE[0], FOV_RANGE[1]));
+    standView(S.stand.bearing, S.stand.pitch);
+  }
+
+  // after the camera came to rest: glaciers in view, address, labels (skipped while flying or turning)
+  function settled() { S.quiet = false; sync(); viewToUrl(); updatePeakLabels(); }
+
+  // end a flight or a stand: the normal field of view, tilt limit and controls again, the camera where it is
+  function leaveStand() {
+    if (S.flight) cancelAnimationFrame(S.flight.frame);
+    if (!S.flight && !S.stand) return;
+    const map = S.map, c = cameraNow(), ground = S.stand ? S.stand.ground : map.transform.elevation;
+    S.flight = S.stand = null;
+    map.transform.clearNearFarZOverride();
+    map.setVerticalFieldOfView(S.fov0);
+    jumpCamera(cameraAt(c.lng, c.lat, c.alt, c.bearing, Math.min(c.pitch, MAX_PITCH), ground));
+    map.setMaxPitch(MAX_PITCH);
+    map.setCenterClampedToGround(true);
+    for (const k of CONTROLS) map[k].enable();
+    map.getCanvasContainer().style.touchAction = "";
+    peakSel(null);
+    S.quiet = false;
+  }
+
+  // leave the summit (the search's ×, the title): back to the selected glacier, or to the whole Alps
+  function leavePeak() {
+    if (!S.stand && !S.flight) return;
+    leaveStand();
+    if (S.rgi) flyToGlacier(S.rgi, 2500); else flyToOverview();
+  }
+
+  // turning the view on a summit: drag with the mouse or one finger (the view follows the pointer); zooming (wheel,
+  // pinch, + and -) changes the field of view, the camera stays. Clicks (on labels, glaciers) still go through: a drag starts after 3 px.
+  function lookAround(container) {
+    const ptrs = new Map();
+    let pinch = null, dragging = false, wheelEnd = 0;
+    const active = () => S.stand && !S.flight;
+    const perPx = () => S.map.getVerticalFieldOfView() / S.map.getCanvas().clientHeight;   // degrees per pixel
+    container.addEventListener("pointerdown", (e) => {
+      if (!active() || (e.target.closest && e.target.closest(".peak-label, .maplibregl-ctrl"))) return;
+      ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (ptrs.size === 2) {
+        const [p, q] = [...ptrs.values()];
+        pinch = { d: Math.hypot(p.x - q.x, p.y - q.y), fov: S.map.getVerticalFieldOfView() };
+      }
+    });
+    window.addEventListener("pointermove", (e) => {
+      const was = ptrs.get(e.pointerId);
+      if (!was || !active()) return;
+      if (ptrs.size === 1) {
+        const dx = e.clientX - was.x, dy = e.clientY - was.y;
+        if (!dragging && Math.hypot(dx, dy) < 3) return;
+        dragging = S.quiet = true;
+        ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        standView(S.stand.bearing - dx * perPx(), S.stand.pitch + dy * perPx());
+      } else if (ptrs.size === 2 && pinch) {
+        ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+        const [p, q] = [...ptrs.values()];
+        dragging = S.quiet = true;
+        standFov(pinch.fov * pinch.d / Math.max(Math.hypot(p.x - q.x, p.y - q.y), 1));
+      }
+    });
+    const up = (e) => {
+      if (!ptrs.delete(e.pointerId)) return;
+      if (ptrs.size < 2) pinch = null;
+      if (!ptrs.size && dragging) { dragging = false; settled(); }
+    };
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    container.addEventListener("wheel", (e) => {
+      if (!active()) return;
+      e.preventDefault();
+      S.quiet = true;
+      standFov(S.map.getVerticalFieldOfView() * Math.exp(e.deltaY * 0.0015));
+      clearTimeout(wheelEnd);
+      wheelEnd = setTimeout(settled, 250);
+    }, { passive: false });
+    // keyboard: + and - zoom (the field of view), as MapLibre's keys do elsewhere
+    document.addEventListener("keydown", (e) => {
+      if (!active() || e.target.closest && e.target.closest("input, textarea")) return;
+      const f = { "+": 0.8, "=": 0.8, "-": 1.25, "_": 1.25 }[e.key];
+      if (!f) return;
+      e.preventDefault();
+      S.quiet = true;
+      standFov(S.map.getVerticalFieldOfView() * f);
+      clearTimeout(wheelEnd);
+      wheelEnd = setTimeout(settled, 250);
+    });
+  }
+
+  // the compass on a summit: turn the view north and level (MapLibre's reset would move the camera)
+  function turnStand(bearing, pitch) {
+    const s = S.stand, b0 = s.bearing, p0 = s.pitch, t0 = performance.now();
+    const turn = ((bearing - b0 + 540) % 360) - 180;
+    S.quiet = true;
+    const step = () => {
+      if (!S.stand) return;
+      const k = Math.min((performance.now() - t0) / 800, 1), e = k * k * (3 - 2 * k);
+      standView(b0 + turn * e, p0 + (pitch - p0) * e);
+      if (k < 1) requestAnimationFrame(step); else settled();
+    };
+    step();
+  }
+
+  // ---------------------------------------------------------------- peak labels
+  // Name and height above the summits in view, with a dashed line down to the summit; a click stands on it.
+  // Only the most prominent and high peaks (about a tenth, score > 0 from tools/build_peaks.py); the rest are in
+  // the search. HTML markers: MapLibre puts them on the terrain and hides them behind mountains. Where labels
+  // would overlap, the higher score wins. From zoom PEAK_ZOOM on, at most PEAK_MAX (fewer on phones).
+  const PEAK_ZOOM = 10.5, PEAK_MAX = 20, STEM = 26;
+  function peakMarker(p) {
+    const el = document.createElement("div");
+    el.className = "peak-label";
+    el.title = S.cfg.t.peak_tip;
+    el.innerHTML = `<div class="peak-text"><span class="peak-name">${esc(p[1])}</span>` +
+                   (p[2] != null ? ` <span class="peak-ele">${p[2]} m</span>` : "") +
+                   `</div><div class="peak-stem" style="height:${STEM}px"></div>`;
+    el.addEventListener("click", () => pickPeak(p));
+    return new maplibregl.Marker({ element: el, anchor: "bottom", opacityWhenCovered: "0" })
+      .setLngLat([p[4][0], p[4][1]]);
+  }
+
+  function pickPeak(p) { flyToPeak(p[0]); }
+
+  // city labels for orientation (config.CITIES): a dot and the name, at every zoom, not clickable; one behind a
+  // mountain stays faint. They are placed before the peak labels, which keep clear of them; both keep clear of the
+  // panels over the map.
+  function cityMarker(c) {
+    const el = document.createElement("div");
+    el.className = "city-label";
+    el.innerHTML = `<span class="city-name">${esc(c[0])}</span><span class="city-dot"></span>`;
+    return new maplibregl.Marker({ element: el, anchor: "bottom", opacityWhenCovered: "0.35" }).setLngLat([c[1], c[2]]);
+  }
+
+  function updatePeakLabels() {
+    const map = S.map, shown = new Set(), cities = new Set(), s = S.stand;
+    const W = map.getCanvas().clientWidth, H = map.getCanvas().clientHeight, b = map.getBounds();
+    // labels keep clear of what floats over the map: panel, title, dock, buttons, the first-visit hint
+    const o = map.getContainer().getBoundingClientRect(), boxes = [];
+    for (const el of document.querySelectorAll(".top-stack > *, .bottom-stack > *, .maplibregl-ctrl-top-right")) {
+      const r = el.getBoundingClientRect();
+      if (r.width && r.height) boxes.push([r.left - o.left, r.top - o.top, r.right - o.left, r.bottom - o.top]);
+    }
+    // on a summit the map's bounds are of no use (its centre can be far off): places within km, ahead of the camera
+    const ahead = (lng, lat, km) => {
+      const dx = (lng - s.lng) * Math.cos(s.lat * Math.PI / 180), dy = lat - s.lat;
+      const off = ((Math.atan2(dx, dy) * 180 / Math.PI - s.bearing + 540) % 360) - 180;
+      return Math.hypot(dx, dy) * M_PER_DEG < km * 1000 && Math.abs(off) < 80;
+    };
+    const inView = (lng, lat, km) => s ? ahead(lng, lat, km) : b.contains([lng, lat]);
+    // a label's box above its point (about 6.5 px per character at 11 px), if on screen and clear of the others
+    const place = (lng, lat, chars, above) => {
+      const pt = map.project([lng, lat]), w = 6.5 * chars + 14, h = 18;
+      const box = [pt.x - w / 2, pt.y - above - h, pt.x + w / 2, pt.y];
+      if (box[0] < 0 || box[2] > W || box[1] < 0 || pt.y > H) return false;
+      if (boxes.some((o) => box[0] < o[2] && box[2] > o[0] && box[1] < o[3] && box[3] > o[1])) return false;
+      boxes.push(box);
+      return true;
+    };
+    S.cfg.cities.forEach((c, i) => { if (inView(c[1], c[2], 150) && place(c[1], c[2], c[0].length, 8)) cities.add(i); });
+    if (map.getZoom() >= PEAK_ZOOM && S.peaks) {
+      const max = W < 640 ? 8 : PEAK_MAX;
+      const cand = S.peaks.filter((p) => p[7] > 0 && p[0] !== standId() && inView(p[4][0], p[4][1], 60))
+        .sort((p, q) => q[7] - p[7]);
+      for (const p of cand) {
+        if (shown.size >= max) break;
+        if (place(p[4][0], p[4][1], p[1].length + (p[2] != null ? 7 : 0), STEM)) shown.add(p[0]);
+      }
+    }
+    S.peakMarkers = S.peakMarkers || new Map();
+    for (const [id, m] of S.peakMarkers) if (!shown.has(id)) { m.remove(); S.peakMarkers.delete(id); }
+    for (const id of shown) {
+      if (!S.peakMarkers.has(id)) S.peakMarkers.set(id, peakMarker(S.peaks.find((p) => p[0] === id)).addTo(map));
+    }
+    S.cityMarkers = S.cityMarkers || new Map();
+    for (const [i, m] of S.cityMarkers) if (!cities.has(i)) { m.remove(); S.cityMarkers.delete(i); }
+    for (const i of cities) if (!S.cityMarkers.has(i)) S.cityMarkers.set(i, cityMarker(S.cfg.cities[i]).addTo(map));
+  }
+
+  // the peak list (api.py), fetched the first time the search is used or the map shows labels (zoomed in); a
+  // search already showing results is
+  // run again when it arrives ("peaks_ready"). Each entry gets what the search matches at its end, in lower case.
+  function loadPeaks() {
+    if (S.peaksLoading || !S.cfg || !S.cfg.peaks_url) return;
+    S.peaksLoading = true;
+    fetch(origin() + S.cfg.peaks_url).then((r) => r.ok ? r.json() : Promise.reject(r.status)).then((list) => {
+      S.peaks = list.map((e) => [...e, [e[1], e[3]].filter((x) => x).join(" / ").toLowerCase()]);
+      if (window.dash_clientside && window.dash_clientside.set_props)
+        window.dash_clientside.set_props("peaks_ready", { data: S.peaks.length });
+      if (S.urlPeak) {           // opened from a link on a summit: stand there, facing as in the link
+        const v = (new URLSearchParams(window.location.search).get("view") || "").split(",").map(Number);
+        flyToPeak(S.urlPeak, v.length === 5 && v.every(Number.isFinite) ? { instant: true, bearing: v[3], pitch: v[4] } : { instant: true });
+        S.urlPeak = null;
+      }
+      if (S.loaded) updatePeakLabels();
+    }).catch(() => { S.peaksLoading = false; });     // try again on the next visit to the search field
+  }
+  document.addEventListener("focusin", (e) => { if (e.target.closest && e.target.closest(".glacier-search")) loadPeaks(); });
+
   function flyToOverview() {
+    leaveStand();
     const cam = S.map.cameraForBounds(S.cfg.alps_bounds, { padding: 30 });
     if (cam) S.map.flyTo({ center: cam.center, zoom: cam.zoom, pitch: 0, bearing: 0, duration: 2000 });
   }
@@ -650,7 +982,9 @@
     const newGlacier = st.rgi !== S.rgi;
     S.rgi = st.rgi;
     if (restyled) refreshDrape();
-    if (newGlacier && S.urlView) {
+    if (newGlacier && S.holdView) {
+      // a link on a summit is still loading: stay there
+    } else if (newGlacier && S.urlView) {
       // opened from a link with a camera: stay there. The selection may still be on its way from the
       // server (null first), so the link's view only ends once the link's glacier has arrived.
       if (st.rgi || urlGlacier() === null) S.urlView = null;
@@ -660,13 +994,17 @@
     sync();
   }
 
-  // ways back after moving the camera: a click on the search field while it shows the selected glacier returns to
-  // that glacier's view, a click on the title clears the selection (the × button; apply() then flies to the
-  // whole Alps) or, with nothing selected, just flies there
+  // ways back after moving the camera: a click on the search field while it shows the selected glacier (or the
+  // peak one stands on) returns to that glacier's (or the summit's first) view; a click on the title leaves a
+  // summit, or clears the selection (the × button; apply() then flies to the whole Alps), or with nothing
+  // selected just flies there
   document.addEventListener("click", (e) => {
     if (!S.loaded || !e.target.closest) return;
     const box = e.target.closest(".glacier-search");
-    if (box && S.rgi && box.classList.contains("has-sel") && e.target.closest(".gs-input")) flyToGlacier(S.rgi, 1500);
+    const onField = box && box.classList.contains("has-sel") && e.target.closest(".gs-input");
+    if (onField && S.stand) flyToPeak(S.stand.id);              // back to the summit's first view
+    else if (onField && S.rgi && !S.flight) flyToGlacier(S.rgi, 1500);
+    else if (e.target.closest(".map-title") && (S.stand || S.flight)) leavePeak();
     else if (e.target.closest(".map-title")) {
       const clear = document.getElementById("glacier_clear");
       if (S.rgi && clear) clear.click();
@@ -718,5 +1056,8 @@
       apply();
     },
     busy() { return S.frameReq !== null || S.bedReq.size > 0; },
+    flyToPeak,
+    leavePeak,
+    peaks() { return S.peaks || []; },
   };
 })();
