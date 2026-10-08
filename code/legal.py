@@ -127,6 +127,10 @@ werden nicht protokolliert. Die Daten dienen dem sicheren Betrieb und der Fehler
 mit anderen Daten zusammengeführt.</p>
 <p>Rechtsgrundlage ist Art. 6 Abs. 1 UAbs. 1 lit. e DSGVO in Verbindung mit Art. 4 Abs. 1 BayDSG.
 Die Logdateien werden nach 14 Tagen automatisch gelöscht.</p>
+<p>Zusätzlich führt der Webserver eine anonymisierte Logdatei für Zugriffsstatistiken (Anzahl der Abrufe,
+ungefähre Herkunft nach Land und Stadt, Gerätetyp). Darin wird die IP-Adresse vor dem Speichern gekürzt
+(IPv4: letztes Byte, IPv6: alles nach den ersten 48 Bit wird auf Null gesetzt), sodass sie keiner Person mehr
+zugeordnet werden kann. Diese Logdatei wird nach einem Jahr automatisch gelöscht.</p>
 
 <h2>Kartendienste</h2>
 <p>Das Geländemodell (Terrain Tiles, bereitgestellt über Amazon Web Services) ruft unser eigener Server ab
@@ -241,6 +245,10 @@ identification (user agent). The map and model data requested while you use the 
 serve the secure operation of the site and the analysis of errors and are not combined with other data.</p>
 <p>The legal basis is Art. 6 (1) subpara. 1 (e) GDPR in conjunction with Art. 4 (1) BayDSG.
 The log files are deleted automatically after 14 days.</p>
+<p>In addition, the web server keeps an anonymised log file for access statistics (number of visits, approximate
+origin by country and city, device type). In it, the IP address is shortened before it is stored (IPv4: the
+last byte, IPv6: everything after the first 48 bits is set to zero), so it can no longer be linked to a person.
+This log file is deleted automatically after one year.</p>
 
 <h2>Map services</h2>
 <p>The terrain (Terrain Tiles, provided via Amazon Web Services) is fetched and cached by our own server; we

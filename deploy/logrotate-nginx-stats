@@ -1,0 +1,14 @@
+# Anonymised visitor-statistics log (see nginx-logs.conf). Installed at /etc/logrotate.d/nginx-stats.
+# Daily files, kept for one year, then deleted.
+/var/log/nginx/stats/access-anon.log {
+	daily
+	missingok
+	rotate 365
+	compress
+	delaycompress
+	notifempty
+	create 0640 www-data adm
+	postrotate
+		invoke-rc.d nginx rotate >/dev/null 2>&1
+	endscript
+}

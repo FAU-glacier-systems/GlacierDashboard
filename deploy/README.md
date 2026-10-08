@@ -12,6 +12,7 @@ browser ──HTTPS──> nginx (:443, TLS, gzip, cache) ──> gunicorn 127.0
 - nginx site: `/etc/nginx/sites-available/glacierdash` (proxy + gzip for the JSON figure payloads), copy in `nginx-site.conf`.
   It caches the 3D app's data under `/api3d/` (terrain tiles, per-year ice blocks; fixed per URL).
   The cache zone and the rate limit for `/api3d/` (50 requests/s per IP, bursts of 300) are defined in `nginx-tiles.conf`, installed at `/etc/nginx/conf.d/tiles.conf` (cache in `/var/cache/nginx/tiles`, max 2 GB). HTTP/2 is on.
+- Logs: the full `access.log` (complete IPs) keeps nginx's default of 14 days. An anonymised copy for visitor statistics (last IPv4 byte / IPv6 after /48 zeroed) goes to `/var/log/nginx/stats/access-anon.log` and is kept one year: format in `nginx-logs.conf` (installed at `/etc/nginx/conf.d/logs.conf`), rotation in `logrotate-nginx-stats` (installed at `/etc/logrotate.d/nginx-stats`). Both retention periods are stated on the privacy page (`code/legal.py`).
 
 ## Everyday commands
 
