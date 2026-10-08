@@ -68,6 +68,7 @@ TEXTS = {
         "peak_tip": "Click to stand on the summit",
         "peak_exit": "Leave summit", "peak_exit_tip": "Back to the glacier view",
         "update": "A new version of this page is available.", "reload": "Reload",
+        "compass_peak": "Back to the first view from the summit",
         "in": "in", "of": "of", "gone": "gone", "decimal": ".",
         "thickness": "Thickness", "compass": "Drag to rotate the map; click to turn north and flat, click again to turn back",
     },
@@ -89,11 +90,13 @@ TEXTS = {
         "peak_tip": "Klicken, um auf dem Gipfel zu stehen",
         "peak_exit": "Gipfel verlassen", "peak_exit_tip": "Zurück zur Gletscheransicht",
         "update": "Eine neue Version dieser Seite ist verfügbar.", "reload": "Neu laden",
+        "compass_peak": "Zurück zur ersten Ansicht vom Gipfel",
         "in": "im Jahr", "of": "von", "gone": "verschwunden", "decimal": ",",
         "thickness": "Eisdicke", "compass": "Ziehen, um die Karte zu drehen; klicken für Norden und flach, erneut klicken für zurück",
     },
 }
-BROWSER_TEXTS = ("more", "none", "peak", "peak_tip", "update", "reload", "in", "of", "gone", "decimal", "thickness", "theme", "play", "pause", "compass")
+BROWSER_TEXTS = ("more", "none", "peak", "peak_tip", "update", "reload", "compass_peak", "in", "of", "gone",
+                 "decimal", "thickness", "theme", "play", "pause", "compass")
 
 # [rgi, name] of all glaciers, named ones first (alphabetically), then the unnamed ones by RGI ID
 SEARCH_LIST = sorted(([r, config.GLACIER_NAMES.get(r, "")] for r in GLACIERS),

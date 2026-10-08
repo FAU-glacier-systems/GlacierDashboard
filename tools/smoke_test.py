@@ -6,7 +6,8 @@ and after a restart. It checks what a visitor would notice first:
     city labels in the overview, peak labels in the default (Aletsch) view
     search: a peak by another language's name ("Cervino"), Enter flies onto the summit
     on the summit: the camera lands where planned and stays put while the view turns (arrow keys) and zooms (+),
-    the search field shows the peak, "Leave summit" is there; leaving restores the normal view
+    looking up keeps the flat map, the compass returns to the first view, the search field shows the peak,
+    "Leave summit" is there; leaving restores the normal view
     search: a glacier is selected (address)
     the German page, and the legal pages with their data-source and privacy texts
 
@@ -103,6 +104,17 @@ def main():
               and moved < 1 and abs(cam2["alt"] - cam["alt"]) < 1,
               f"bearing {cam['bearing']:.0f}→{cam2['bearing']:.0f}°, fov {cam['fov']:.0f}→{cam2['fov']:.0f}°")
 
+        pg.keyboard.press("Shift+ArrowUp")              # up to the horizon and above: no globe, no jump
+        pg.keyboard.press("Shift+ArrowUp")
+        pg.wait_for_timeout(800)
+        check("looking up keeps the flat map", pg.evaluate("window._map3d.getZoom()") > 10,
+              f"zoom {pg.evaluate('window._map3d.getZoom()'):.1f}")
+        pg.click(".maplibregl-ctrl-compass", no_wait_after=True)
+        pg.wait_for_timeout(2000)
+        cam4 = pg.evaluate(CAMERA)
+        check("compass returns to the summit's first view",
+              abs(((cam4["bearing"] - cam["bearing"] + 540) % 360) - 180) < 1 and abs(cam4["fov"] - cam["fov"]) < 1,
+              f"bearing {cam4['bearing']:.0f}°, fov {cam4['fov']:.0f}°")
         pg.locator("#peak_exit").click()
         pg.wait_for_timeout(4000)
         cam3 = pg.evaluate(CAMERA)

@@ -607,9 +607,9 @@
     const cam = () => ({ center: map.getCenter(), zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() });
     map.getContainer().addEventListener("click", (e) => {
       if (!e.target.closest || !e.target.closest(".maplibregl-ctrl-compass")) return;
-      if (S.stand || S.flight) {                           // on a summit: turn the view, the camera stays
+      if (S.stand || S.flight) {          // on a summit: back to its first view (towards the glacier), camera stays
         e.stopPropagation();
-        if (S.stand) turnStand(0, 90);
+        if (S.stand) turnStand(S.stand.home.bearing, S.stand.home.pitch, STAND_FOV);
         return;
       }
       if (before && (!after || same(cam(), after))) {      // also while the reset is still turning
@@ -666,7 +666,7 @@
   // ---------------------------------------------------------------- standing on a summit
   // A peak from the search or a label: the camera stands just above the summit with a wide view, first looking at
   // ice of a glacier below (see tools/build_peaks.py). There it stays: dragging (mouse, one finger) turns the
-  // view, the wheel or a pinch narrows or widens it, the compass turns it north and level. The search's ×, the
+  // view, the wheel or a pinch narrows or widens it, the compass turns back to the first view. The search's ×, the
   // title, a glacier or another peak leave. MapLibre's own flights take the height of the destination from the
   // terrain loaded when they start (still coarse there, often far too low) and keep the camera where they end,
   // so it could end inside the mountain: this flight sets the camera's position itself in every frame, and the
@@ -678,11 +678,14 @@
 
   // camera options that put the camera at lng, lat, alt (m) looking along bearing and pitch: aimed at the point
   // where that line reaches the height ground (m), so nothing depends on terrain that has not loaded yet and the
-  // map's centre and zoom stay sensible (at least 0.5 km away, at most 300 km when the line runs almost level)
-  function cameraAt(lng, lat, alt, bearing, pitch, ground) {
+  // map's centre and zoom stay sensible: at least 0.5 km away, at most 300 km when the line runs almost level. On
+  // a summit at most far = STAND_FAR: looking level or up, a centre far away would drop the zoom below 10, where
+  // the map turns into the globe and the view breaks.
+  const STAND_FAR = 15000;
+  function cameraAt(lng, lat, alt, bearing, pitch, ground, far = Infinity) {
     const b = bearing * Math.PI / 180, p = pitch * Math.PI / 180;
     const level = Math.cos(p) < 0.05, along = (alt - ground) / Math.max(Math.cos(p), 1e-3);
-    const D = Math.max(level ? Math.min(along, 300000) : along, 500), h = D * Math.sin(p);
+    const D = Math.max(level ? Math.min(far, 300000) : Math.min(along, far), 500), h = D * Math.sin(p);
     const to = new maplibregl.LngLat(lng + h * Math.sin(b) / (M_PER_DEG * Math.cos(lat * Math.PI / 180)),
                                      lat + h * Math.cos(b) / M_PER_DEG);
     return S.map.calculateCameraOptionsFromTo(new maplibregl.LngLat(lng, lat), alt, to, alt - D * Math.cos(p));
@@ -701,6 +704,13 @@
   }
 
   const standId = () => (S.stand && S.stand.id) || (S.flight && S.flight.id) || null;
+
+  // the compass's tooltip says what it does: on a summit it turns back to the first view
+  function compassTip(onSummit) {
+    const b = document.querySelector(".maplibregl-ctrl-compass");
+    const t = onSummit ? S.cfg.t.compass_peak : S.cfg.t.compass;
+    if (b) { b.title = t; b.setAttribute("aria-label", t); }
+  }
 
   // the search field shows the peak like its result entry (clientside.py); null when leaving
   function peakSel(p) {
@@ -734,6 +744,7 @@
     S.stand = null;
     S.flight = { id };
     peakSel(p);
+    compassTip(true);
     const step = () => {
       const k = duration ? Math.min((performance.now() - t0) / duration, 1) : 1, e = ease(k);
       map.setVerticalFieldOfView(a.fov + (b.fov - a.fov) * e);
@@ -745,7 +756,8 @@
         return;
       }
       S.flight = null;
-      S.stand = { id, lng: b.lng, lat: b.lat, alt: b.alt, ground: look[2], bearing: b.bearing, pitch: b.pitch };
+      S.stand = { id, lng: b.lng, lat: b.lat, alt: b.alt, ground: look[2], bearing: b.bearing, pitch: b.pitch,
+                  home: { bearing: dir.bearing, pitch: clamp(dir.pitch, 0, STAND_PITCH) } };   // the compass returns here
       standView(b.bearing, b.pitch);
       settled();
     };
@@ -759,7 +771,7 @@
     s.pitch = clamp(pitch, 0, STAND_PITCH);
     const t = S.map.transform;
     t.clearNearFarZOverride();                // MapLibre's far plane for this view...
-    jumpCamera(cameraAt(s.lng, s.lat, s.alt, s.bearing, s.pitch, s.ground));
+    jumpCamera(cameraAt(s.lng, s.lat, s.alt, s.bearing, s.pitch, s.ground, STAND_FAR));
     // ...but a near one STAND_NEAR m ahead: MapLibre puts it at a fixed share of the distance to the map's centre
     // (tens of metres here), which cuts away the summit right in front of the camera, so one looks into the mountain
     const perMetre = t.worldSize / (40075016.686 * Math.cos(S.map.getCenter().lat * Math.PI / 180));
@@ -789,6 +801,7 @@
     for (const k of CONTROLS) map[k].enable();
     map.getCanvasContainer().style.touchAction = "";
     peakSel(null);
+    compassTip(false);
     S.quiet = false;
   }
 
@@ -862,14 +875,15 @@
     });
   }
 
-  // the compass on a summit: turn the view north and level (MapLibre's reset would move the camera)
-  function turnStand(bearing, pitch) {
-    const s = S.stand, b0 = s.bearing, p0 = s.pitch, t0 = performance.now();
+  // the compass on a summit: turn back to the summit's first view (MapLibre's reset would move the camera)
+  function turnStand(bearing, pitch, fov) {
+    const s = S.stand, b0 = s.bearing, p0 = s.pitch, f0 = S.map.getVerticalFieldOfView(), t0 = performance.now();
     const turn = ((bearing - b0 + 540) % 360) - 180;
     S.quiet = true;
     const step = () => {
       if (!S.stand) return;
       const k = Math.min((performance.now() - t0) / 800, 1), e = k * k * (3 - 2 * k);
+      S.map.setVerticalFieldOfView(f0 + (fov - f0) * e);
       standView(b0 + turn * e, p0 + (pitch - p0) * e);
       if (k < 1) requestAnimationFrame(step); else settled();
     };
