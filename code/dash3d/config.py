@@ -61,7 +61,7 @@ if GLACIERS_DF.empty:
 ALL_RGIS = set(GLACIERS_DF.rgi_id)
 GLACIER_NAMES = {r: n.strip() for r, n in zip(GLACIERS_DF.rgi_id, GLACIERS_DF.glac_name.fillna("")) if n.strip()}
 
-# notable peaks near the glaciers, for the search (the camera goes onto the summit); none if the file is missing
+# notable peaks near the glaciers, for the search and the labels; none if the file is missing
 try:
     PEAKS = [p for p in json.loads(PEAKS_JSON.read_text(encoding="utf-8"))["peaks"] if p["glacier"] in ALL_RGIS]
 except FileNotFoundError:

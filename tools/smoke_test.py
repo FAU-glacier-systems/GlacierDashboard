@@ -4,10 +4,8 @@ and after a restart. It checks what a visitor would notice first:
 
     page and map load without script errors, the version endpoint answers
     city labels in the overview, peak labels in the default (Aletsch) view
-    search: a peak by another language's name ("Cervino"), Enter flies onto the summit
-    on the summit: the camera lands where planned and stays put while the view turns (arrow keys) and zooms (+),
-    looking up keeps the flat map, the compass returns to the first view, the search field shows the peak,
-    "Leave summit" is there; leaving restores the normal view
+    search: a peak by another language's name ("Cervino"), Enter flies there (direction and tilt kept, the field
+    cleared); a click on a peak label flies there too
     search: a glacier is selected (address)
     the German page, and the legal pages with their data-source and privacy texts
 
@@ -24,12 +22,6 @@ import sys
 import urllib.request
 
 from playwright.sync_api import sync_playwright
-
-# where the camera is, from MapLibre's transform (the same formula as cameraNow() in map3d.js)
-CAMERA = """() => { const m = window._map3d, t = m.transform, c = t.getCameraLngLat(), lat = m.getCenter().lat;
-  const perMetre = t.worldSize / (40075016.686 * Math.cos(lat * Math.PI / 180));
-  return {lng: c.lng, lat: c.lat, alt: t.elevation + t.cameraToCenterDistance * Math.cos(m.getPitch() * Math.PI / 180) / perMetre,
-          bearing: m.getBearing(), fov: m.getVerticalFieldOfView()}; }"""
 
 
 class Checks:
@@ -50,7 +42,7 @@ def main():
 
     for path, text in (("/api3d/version", None), ("/impressum", "OpenStreetMap"), ("/imprint", "OpenStreetMap"),
                        ("/datenschutz", "nach einem Jahr"), ("/privacy", "after one year"),
-                       ("/barrierefreiheit", "Gipfel"), ("/accessibility", "summit")):
+                       ("/barrierefreiheit", "Gletschern und Gipfeln"), ("/accessibility", "glaciers and peaks")):
         try:
             body = urllib.request.urlopen(url + path, timeout=30).read().decode()
             check(f"GET {path}", text is None or text in body, "" if text is None else f"contains '{text}'")
@@ -73,7 +65,7 @@ def main():
         check("peak labels in the Aletsch view", pg.locator(".peak-label").count() > 3,
               f"{pg.locator('.peak-label').count()} labels")
 
-        # search a peak by its Italian name and stand on it
+        # search a peak by its Italian name and fly there
         field = pg.locator(".gs-input input")       # dcc.Input wraps the <input> in a div
         field.click()
         pg.wait_for_function("window.Map3D.peaks().length > 0", timeout=30000)
@@ -81,45 +73,29 @@ def main():
         pg.wait_for_timeout(500)
         first = pg.locator(".gs-hit:not(.is-hidden) .gs-name").first.inner_text()
         check("search 'Cervino' finds the Matterhorn", first == "Matterhorn", first)
-        planned = pg.evaluate("window.Map3D.peaks().find(e => e[1] === 'Matterhorn')[4]")
+        top = pg.evaluate("window.Map3D.peaks().find(e => e[1] === 'Matterhorn')[4]")
+        angle = pg.evaluate("[window._map3d.getBearing(), window._map3d.getPitch()]")
         field.press("Enter")
-        pg.wait_for_function("new URLSearchParams(location.search).get('peak')", timeout=30000)
-        pg.wait_for_timeout(3000)
-        cam = pg.evaluate(CAMERA)
-        off = ((cam["lng"] - planned[0]) * 76000) ** 2 + ((cam["lat"] - planned[1]) * 111320) ** 2
-        check("camera lands on the summit", off < 25 and abs(cam["alt"] - planned[2]) < 5,
-              f"{off ** 0.5:.1f} m off, {cam['alt']:.0f} m vs {planned[2]} m planned")
-        check("wide view on the summit", abs(cam["fov"] - 60) < 1, f"{cam['fov']:.0f}°")
-        check("search field shows the peak", "Matterhorn" in pg.locator(".gs-display").inner_text())
-        check("'Leave summit' shown", pg.locator("#peak_exit").is_visible())
+        pg.wait_for_timeout(4500)
+        c = pg.evaluate("(() => { const m = window._map3d, c = m.getCenter(); return {lng: c.lng, lat: c.lat, b: m.getBearing(), p: m.getPitch()}; })()")
+        off = (((c["lng"] - top[0]) * 76000) ** 2 + ((c["lat"] - top[1]) * 111320) ** 2) ** 0.5
+        check("Enter flies to the peak, same angle", off < 200 and abs(c["b"] - angle[0]) < 0.5 and abs(c["p"] - angle[1]) < 0.5,
+              f"{off:.0f} m off, bearing {angle[0]:.0f}→{c['b']:.0f}°, pitch {angle[1]:.0f}→{c['p']:.0f}°")
+        check("no summit view left", "peak=" not in pg.evaluate("location.search")
+              and not pg.locator("#peak_exit").count() and field.input_value() != "Cervino", field.input_value())
 
-        field.evaluate("e => e.blur()")
-        pg.keyboard.press("ArrowRight")
-        pg.keyboard.press("+")
-        pg.wait_for_timeout(800)
-        cam2 = pg.evaluate(CAMERA)
-        moved = ((cam2["lng"] - cam["lng"]) * 76000) ** 2 + ((cam2["lat"] - cam["lat"]) * 111320) ** 2
-        check("arrow key turns, + zooms, the camera stays",
-              abs(((cam2["bearing"] - cam["bearing"] + 540) % 360) - 180 - 5) < 1 and cam2["fov"] < cam["fov"]
-              and moved < 1 and abs(cam2["alt"] - cam["alt"]) < 1,
-              f"bearing {cam['bearing']:.0f}→{cam2['bearing']:.0f}°, fov {cam['fov']:.0f}→{cam2['fov']:.0f}°")
-
-        pg.keyboard.press("Shift+ArrowUp")              # up to the horizon and above: no globe, no jump
-        pg.keyboard.press("Shift+ArrowUp")
-        pg.wait_for_timeout(800)
-        check("looking up keeps the flat map", pg.evaluate("window._map3d.getZoom()") > 10,
-              f"zoom {pg.evaluate('window._map3d.getZoom()'):.1f}")
-        pg.click(".maplibregl-ctrl-compass", no_wait_after=True)
-        pg.wait_for_timeout(2000)
-        cam4 = pg.evaluate(CAMERA)
-        check("compass returns to the summit's first view",
-              abs(((cam4["bearing"] - cam["bearing"] + 540) % 360) - 180) < 1 and abs(cam4["fov"] - cam["fov"]) < 1,
-              f"bearing {cam4['bearing']:.0f}°, fov {cam4['fov']:.0f}°")
-        pg.locator("#peak_exit").click()
-        pg.wait_for_timeout(4000)
-        cam3 = pg.evaluate(CAMERA)
-        check("leaving the summit", not pg.locator("#peak_exit").is_visible() and abs(cam3["fov"] - 36.87) < 1
-              and "peak=" not in pg.evaluate("location.search"), f"fov {cam3['fov']:.0f}°")
+        # a click on a peak label flies there
+        pg.wait_for_function("document.querySelectorAll('.peak-label').length > 0", timeout=30000)
+        label = pg.locator(".peak-label").first
+        name = label.locator(".peak-name").inner_text()
+        top = pg.evaluate("(n) => window.Map3D.peaks().find(e => e[1] === n)[4]", name)
+        angle = pg.evaluate("[window._map3d.getBearing(), window._map3d.getPitch()]")
+        label.click()
+        pg.wait_for_timeout(4500)
+        c = pg.evaluate("(() => { const m = window._map3d, c = m.getCenter(); return {lng: c.lng, lat: c.lat, b: m.getBearing(), p: m.getPitch()}; })()")
+        off = (((c["lng"] - top[0]) * 76000) ** 2 + ((c["lat"] - top[1]) * 111320) ** 2) ** 0.5
+        check("a peak label flies there, same angle", off < 200 and abs(c["b"] - angle[0]) < 0.5 and abs(c["p"] - angle[1]) < 0.5,
+              f"{name}, {off:.0f} m off")
 
         # a glacier from the search
         field.click()

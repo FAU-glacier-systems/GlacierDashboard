@@ -2,9 +2,9 @@
 Build the list of mountain peaks for the 3D dashboard's search (data/peaks/peaks_region11_alps.json).
 
 Peaks come from OpenStreetMap (natural=peak with a name and a Wikidata entry, i.e. notable ones) within
-MAX_KM of a modelled glacier's ice (in 2000). Picking one in the search puts the camera on the summit, looking
-at the nearest such glacier: at the point of its ice that is closest to the ice's middle while lying at least
-MIN_DOWN degrees below the summit (peaks without such a glacier are left out, the view would look up at a
+MAX_KM of a modelled glacier's ice (in 2000). Picking one in the search or on the map flies there (the dashboard
+only uses the position of cam). Each peak is paired with the nearest such glacier: at the point of its ice that
+is closest to the ice's middle while lying at least MIN_DOWN degrees below the summit (peaks without such a glacier are left out, the view would look up at a
 slope). Both heights are taken from the dashboard's own terrain tiles (zoom 12), so
 the camera sits just above the ground the browser draws, not where OpenStreetMap's "ele" says:
 

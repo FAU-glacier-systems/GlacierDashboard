@@ -17,10 +17,10 @@ Live at https://www.glacier-evolution.nat.fau.de. This branch is what runs on th
 | `deploy/` | systemd unit, gunicorn and nginx config, and how to operate the server ([deploy/README.md](deploy/README.md)) |
 | `tools/build_glacier_store.py` | builds the read-optimised data store the 3D app reads |
 | `tools/compress_netcdf.py` | lossless NetCDF recompression (about 5× smaller, bit-exact verified) |
-| `tools/smoke_test.py` | headless-browser check of the main functions (search, summit view, labels, German, legal pages) |
+| `tools/smoke_test.py` | headless-browser check of the main functions (search, peaks, labels, German, legal pages) |
 | `tools/build_peaks.py` | builds the peak list for the search from OpenStreetMap (notable peaks within 3 km of a glacier) |
 | `data/glacier_location_and_name/` | glacier names, countries, coordinates |
-| `data/peaks/` | the peak list (© OpenStreetMap contributors, ODbL): name, summit camera, glacier looked at |
+| `data/peaks/` | the peak list (© OpenStreetMap contributors, ODbL): name, summit, glacier looked at |
 
 Not in git (too large, kept on the server):
 
@@ -66,8 +66,6 @@ The address bar always reflects the current view, so it can be bookmarked or sha
 `/?glacier=RGI2000-v7.0-G-11-01522&scenario=rcp_8_5&property=thk&year=2060`.
 `glacier=all` shows all glaciers; `property` is one of `thk`, `velsurf_mag`, `smb`, `mean_temp`;
 `view=lon,lat,zoom,bearing,pitch` is the camera; without it the map flies to the glacier.
-`peak=<id>` (an OpenStreetMap node, e.g. `osm1435708318` for the Jungfrau) stands on that summit, facing as in
-`view`; there the camera stays put and dragging turns the view, the wheel or a pinch widens or narrows it.
 
 The link preview (Mastodon, Slack, messengers) uses `code/assets/preview.jpg` (1200 × 630) and the page
 description in `code/dash3d/layout.py`; set `SITE_URL` if the site moves to another address.

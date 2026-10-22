@@ -65,10 +65,8 @@ TEXTS = {
         "funded": "Funded by the European Union · European Research Council",
         # in the browser
         "more": "more – keep typing", "none": "Nothing found", "peak": "Peak",
-        "peak_tip": "Click to stand on the summit",
-        "peak_exit": "Leave summit", "peak_exit_tip": "Back to the glacier view",
+        "peak_tip": "Click to fly to this peak",
         "update": "A new version of this page is available.", "reload": "Reload",
-        "compass_peak": "Back to the first view from the summit",
         "in": "in", "of": "of", "gone": "gone", "decimal": ".",
         "thickness": "Thickness", "compass": "Drag to rotate the map; click to turn north and flat, click again to turn back",
     },
@@ -87,15 +85,13 @@ TEXTS = {
         "play": " Start", "pause": " Pause", "play_tip": "Jahre abspielen oder anhalten",
         "funded": "Gefördert von der Europäischen Union · Europäischer Forschungsrat",
         "more": "weitere – weiter tippen", "none": "Nichts gefunden", "peak": "Gipfel",
-        "peak_tip": "Klicken, um auf dem Gipfel zu stehen",
-        "peak_exit": "Gipfel verlassen", "peak_exit_tip": "Zurück zur Gletscheransicht",
+        "peak_tip": "Klicken, um zu diesem Gipfel zu fliegen",
         "update": "Eine neue Version dieser Seite ist verfügbar.", "reload": "Neu laden",
-        "compass_peak": "Zurück zur ersten Ansicht vom Gipfel",
         "in": "im Jahr", "of": "von", "gone": "verschwunden", "decimal": ",",
         "thickness": "Eisdicke", "compass": "Ziehen, um die Karte zu drehen; klicken für Norden und flach, erneut klicken für zurück",
     },
 }
-BROWSER_TEXTS = ("more", "none", "peak", "peak_tip", "update", "reload", "compass_peak", "in", "of", "gone",
+BROWSER_TEXTS = ("more", "none", "peak", "peak_tip", "update", "reload", "in", "of", "gone",
                  "decimal", "thickness", "theme", "play", "pause", "compass")
 
 # [rgi, name] of all glaciers, named ones first (alphabetically), then the unnamed ones by RGI ID
@@ -152,7 +148,6 @@ def make_page(app, lang):
             dcc.Store(id="rgi_select"),        # a glacier picked in the search or on the map: {rgi, t}
             dcc.Store(id="glacier_hits"),      # the IDs (RGI or peak) shown in the search results
             dcc.Store(id="peaks_ready"),       # set by map3d.js once the peak list has loaded
-            dcc.Store(id="peak_sel"),          # the summit the camera stands on (map3d.js): {id, name, sub}
             dcc.Store(id="property"),          # chosen by clicking the colour bar
             dcc.Store(id="scenario"),          # chosen with the scenario buttons
             dcc.Store(id="map_config", data=MAP_CONFIG[lang]),
@@ -220,11 +215,6 @@ def make_page(app, lang):
                     ]),
                     html.Button(T["intro_ok"], id="intro_close", className="btn"),
                 ]),
-
-                # on a summit (map3d.js, peak_sel): the way back down, bottom right above the dock; clientside.py shows it and calls leavePeak
-                html.Button(id="peak_exit", n_clicks=0, className="peak-exit is-hidden", title=T["peak_exit_tip"],
-                            children=[html.Span("↩", className="peak-exit-icon", **{"aria-hidden": "true"}),
-                                      T["peak_exit"]]),
 
                 # the temporal choices in one line: play, slider, scenario
                 html.Div(className="float dock", children=[

@@ -176,7 +176,7 @@ Diese Erklärung gilt für <a href="/">www.glacier-evolution.nat.fau.de</a>.</p>
 </ul>
 <p>Mit der Tastatur bedienbar sind: die Suche nach Gletschern und Gipfeln (Pfeiltasten und Eingabetaste), die
 Auswahl der dargestellten Größe und des Szenarios, der Jahresregler, das Abspielen der Jahre, die Umschaltung
-hell/dunkel und auf einem Gipfel die Blickrichtung (Pfeiltasten) und der Bildausschnitt (+ und −).
+hell/dunkel.
 Die Fläche der Auswahl im gewählten Jahr steht als Text neben dem Szenario.</p>
 <p>Die Darstellung dreidimensionaler Modelldaten lässt sich nicht gleichwertig in Textform wiedergeben.
 Die zugrunde liegenden Daten stellen wir auf Anfrage in tabellarischer Form zur Verfügung.</p>
@@ -295,9 +295,8 @@ with Art. 13 BayBGG, Art. 1 BayBITV and Directive (EU) 2016/2102. This statement
 <li>Content in Easy Language and sign language is not offered.</li>
 </ul>
 <p>Usable with the keyboard: the search for glaciers and peaks (arrow keys and Enter), the choice of the
-property shown and of the scenario, the year slider, playing the years, the light/dark switch, and on a summit
-the direction of view (arrow keys) and the field of view (+ and −). The area of the selection in
-the chosen year is shown as text next to the scenario.</p>
+property shown and of the scenario, the year slider, playing the years and the light/dark switch. The area of
+the selection in the chosen year is shown as text next to the scenario.</p>
 <p>Three-dimensional model data cannot be rendered equivalently as text. We provide the underlying data in
 tabular form on request.</p>
 

@@ -41,13 +41,13 @@ for btn, menu, opt, store in (("cbar_btn", "prop_menu", "prop_opt", "property"),
 
 # search: up to 5 matches of what is typed (glacier name or RGI ID, peak name in any of its languages; a peak's
 # second line names the glacier it looks at) and how many more there are; names that start with it first,
-# glaciers before peaks. Nothing is shown while the field holds the selected glacier's (or summit's) name.
+# glaciers before peaks. Nothing is shown while the field holds the selected glacier's name.
 clientside_callback(
-    """function(text, ready, selected, peak, cfg) {
+    """function(text, ready, selected, cfg) {
         const n = 5, q = (text || '').trim().toLowerCase();
         const peaks = window.Map3D ? window.Map3D.peaks() : [];   // map3d.js loads them; [] until then
         const name = (r) => { const o = cfg.search.find(e => e[0] === r); return o ? (o[1] || r) : ''; };
-        const active = q !== '' && !(peak ? text === peak.name : selected && text === name(selected));
+        const active = q !== '' && !(selected && text === name(selected));
         let hits = [];
         if (active) {
             // [id, name, second line, name starts with q]
@@ -70,20 +70,16 @@ clientside_callback(
     Output({"type": "ghit", "index": ALL}, "className"),
     Output("glacier_more", "children"), Output("glacier_results", "className"),
     Input("glacier_search", "value"), Input("peaks_ready", "data"), State("selected_rgi", "data"),
-    State("peak_sel", "data"), State("map_config", "data"),
+    State("map_config", "data"),
 )
 
-# pick a result (click, or Enter for the first one) or clear (×). A glacier is selected; a peak only puts the
-# camera on its summit (map3d.js, which also sets peak_sel). × on a summit leaves it, otherwise clears the
-# selection.
+# pick a result (click, or Enter for the first one) or clear (×). A glacier is selected; a peak only flies the
+# camera there (map3d.js). × clears the selection.
 clientside_callback(
-    """function(clicks, submits, cleared, hits, peakSel) {
+    """function(clicks, submits, cleared, hits) {
         const t = window.dash_clientside.callback_context.triggered_id, nu = window.dash_clientside.no_update;
         let id;
-        if (t === 'glacier_clear') {
-            if (peakSel) { if (window.Map3D) window.Map3D.leavePeak(); return nu; }
-            id = null;
-        }
+        if (t === 'glacier_clear') id = null;
         else if (t === 'glacier_search') id = (hits || [])[0];
         else if (t && t.type === 'ghit' && clicks[t.index]) id = (hits || [])[t.index];
         if (id === undefined) return nu;
@@ -96,46 +92,31 @@ clientside_callback(
     }""",
     Output("rgi_select", "data"),
     Input({"type": "ghit", "index": ALL}, "n_clicks"), Input("glacier_search", "n_submit"),
-    Input("glacier_clear", "n_clicks"), State("glacier_hits", "data"), State("peak_sel", "data"),
+    Input("glacier_clear", "n_clicks"), State("glacier_hits", "data"),
     prevent_initial_call=True,
 )
 
-# the field shows the peak one stands on, else the selected glacier; × leaves the summit or clears the selection
+# the field shows the selected glacier; × clears the selection
 clientside_callback(
-    """function(selected, peak, cfg) {
+    """function(selected, cfg) {
         const o = selected ? cfg.search.find(e => e[0] === selected) : null;
-        const name = peak ? peak.name : (o ? (o[1] || o[0]) : ''), sub = peak ? peak.sub : (o && o[1] ? o[0] : '');
-        return [name, 'gs-clear' + (selected || peak ? '' : ' is-hidden'), name, sub];
+        const name = o ? (o[1] || o[0]) : '', sub = o && o[1] ? o[0] : '';
+        return [name, 'gs-clear' + (selected ? '' : ' is-hidden'), name, sub];
     }""",
     Output("glacier_search", "value"), Output("glacier_clear", "className"),
     Output("glacier_display_name", "children"), Output("glacier_display_id", "children"),
-    Input("selected_rgi", "data"), Input("peak_sel", "data"), State("map_config", "data"),
+    Input("selected_rgi", "data"), State("map_config", "data"),
 )
 
-# on a summit: the "Leave summit" button, which flies back to the glacier (or the whole Alps)
+# while the field holds that name, it is shown over the field like a search result: name and RGI ID
 clientside_callback(
-    "function(peak) { return 'peak-exit' + (peak ? '' : ' is-hidden'); }",
-    Output("peak_exit", "className"), Input("peak_sel", "data"),
-)
-clientside_callback(
-    """function(n) {
-        if (n && window.Map3D) window.Map3D.leavePeak();
-        return window.dash_clientside.no_update;
-    }""",
-    Output("peak_exit", "title"), Input("peak_exit", "n_clicks"),
-    prevent_initial_call=True,
-)
-
-# while the field holds that name, it is shown over the field like a search result: name and RGI ID, or name and
-# "Peak · height · glacier"
-clientside_callback(
-    """function(text, selected, peak, cfg) {
+    """function(text, selected, cfg) {
         const o = selected ? cfg.search.find(e => e[0] === selected) : null;
-        const shown = peak ? peak.name : (o ? (o[1] || o[0]) : null);
+        const shown = o ? (o[1] || o[0]) : null;
         return 'glacier-search' + (shown && text === shown ? ' has-sel' : '');
     }""",
     Output("glacier_box", "className"),
-    Input("glacier_search", "value"), Input("selected_rgi", "data"), Input("peak_sel", "data"),
+    Input("glacier_search", "value"), Input("selected_rgi", "data"),
     State("map_config", "data"),
 )
 
@@ -146,8 +127,8 @@ clientside_callback(
         if (scenario) p.set('scenario', scenario);
         if (property) p.set('property', property);
         if (year) p.set('year', year);
-        const now = new URLSearchParams(window.location.search);   // the camera and summit, kept by map3d.js
-        for (const k of ['view', 'peak']) if (now.get(k)) p.set(k, now.get(k));
+        const view = new URLSearchParams(window.location.search).get('view');   // the camera, kept by map3d.js
+        if (view) p.set('view', view);
         window.history.replaceState(window.history.state, '', window.location.pathname + '?' + p.toString());
         return window.dash_clientside.no_update;
     }""",
