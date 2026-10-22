@@ -57,12 +57,15 @@ TEXTS = {
         "title": "Alpine glaciers in ", "title_tip": "Back to all glaciers",
         "theme": "Switch light/dark theme",
         "intro_head": f"{N} Alpine glaciers, modelled from 2000 to 2100",
-        "intro": " under three greenhouse gas scenarios. Press ▶ to watch them change, click a glacier for its "
-                 "numbers, or click the colour bar to show flow speed, mass balance or temperature.",
+        "intro": " under three greenhouse gas scenarios. Press ▶ to watch them change. Click a glacier or search "
+                 "for one (top) to see its ice area next to the scenario; click the colour bar to show flow speed, "
+                 "mass balance or temperature.",
         "intro_ok": "Got it",
         "scenario": "RCP scenario", "scenario_tip": "Click to choose the greenhouse gas scenario",
         "play": " Play", "pause": " Pause", "play_tip": "Play or pause the years",
         "funded": "Funded by the European Union · European Research Council",
+        "funded_short": "Funded by the European Union",
+        "area_tip": "Ice area of the selection in",
         # in the browser
         "more": "more – keep typing", "none": "Nothing found", "peak": "Peak",
         "peak_tip": "Click to fly to this peak",
@@ -77,13 +80,15 @@ TEXTS = {
         "title": "Alpengletscher ", "title_tip": "Zurück zu allen Gletschern",
         "theme": "Hell/dunkel umschalten",
         "intro_head": f"{N} Alpengletscher, modelliert von 2000 bis 2100",
-        "intro": " unter drei Treibhausgas-Szenarien. Drücken Sie ▶, um ihre Entwicklung zu sehen, klicken Sie auf "
-                 "einen Gletscher für seine Zahlen oder auf die Farbskala, um Fließgeschwindigkeit, Massenbilanz "
-                 "oder Temperatur zu zeigen.",
+        "intro": " unter drei Treibhausgas-Szenarien. Drücken Sie ▶, um ihre Entwicklung zu sehen. Klicken Sie auf "
+                 "einen Gletscher oder suchen Sie ihn (oben), um seine Eisfläche neben dem Szenario zu sehen; "
+                 "klicken Sie auf die Farbskala, um Fließgeschwindigkeit, Massenbilanz oder Temperatur zu zeigen.",
         "intro_ok": "Verstanden",
         "scenario": "RCP-Szenario", "scenario_tip": "Klicken, um das Treibhausgas-Szenario zu wählen",
         "play": " Start", "pause": " Pause", "play_tip": "Jahre abspielen oder anhalten",
         "funded": "Gefördert von der Europäischen Union · Europäischer Forschungsrat",
+        "funded_short": "Gefördert von der Europäischen Union",
+        "area_tip": "Eisfläche der Auswahl im Jahr",
         "more": "weitere – weiter tippen", "none": "Nichts gefunden", "peak": "Gipfel",
         "peak_tip": "Klicken, um zu diesem Gipfel zu fliegen",
         "update": "Eine neue Version dieser Seite ist verfügbar.", "reload": "Neu laden",
@@ -92,7 +97,7 @@ TEXTS = {
     },
 }
 BROWSER_TEXTS = ("more", "none", "peak", "peak_tip", "update", "reload", "in", "of", "gone",
-                 "decimal", "thickness", "theme", "play", "pause", "compass")
+                 "decimal", "thickness", "theme", "play", "pause", "compass", "area_tip")
 
 # [rgi, name] of all glaciers, named ones first (alphabetically), then the unnamed ones by RGI ID
 SEARCH_LIST = sorted(([r, config.GLACIER_NAMES.get(r, "")] for r in GLACIERS),
@@ -250,6 +255,9 @@ def make_page(app, lang):
             html.Div(className="logo-corner", children=[
                 html.Img(src=app.get_asset_url(config.LOGO_FAU), className="logo-fau",
                          alt="Friedrich-Alexander-Universität Erlangen-Nürnberg"),
+                # the EU emblem with its funding statement in words (ERC/EU visibility rules; not on phones, too
+                # narrow there); the full text is in the Impressum
+                html.Span(T["funded_short"], className="funded-text"),
                 html.Img(src=app.get_asset_url(config.LOGO_ERC), className="logo-erc logo-erc-dark",
                          alt=T["funded"]),
                 html.Img(src=app.get_asset_url(config.LOGO_ERC_LIGHT), className="logo-erc logo-erc-light",

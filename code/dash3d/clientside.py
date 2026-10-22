@@ -214,7 +214,8 @@ clientside_callback(
         const si = keys.indexOf(scenario);
         return [cls, val,
                 keys.map((key, i) => `${cfg.scenario_labels[key]}: ${val[i]} ${t.in} ${year}, ${share[i]} ${t.of} ${y0}`),
-                [H('Strong', {children: label}), H('Span', {className: 'sc-btn-value', children: si >= 0 ? val[si] : ''}),
+                [H('Strong', {children: label}), H('Span', {className: 'sc-btn-value', children: si >= 0 ? val[si] : '',
+                                               title: `${t.area_tip} ${year}`}),
                  H('Span', {className: 'sc-btn-chevron', children: '▾'})]];
     }""",
     Output({"type": "sc_opt", "index": ALL}, "className"),

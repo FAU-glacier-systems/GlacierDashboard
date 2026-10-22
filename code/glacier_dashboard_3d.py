@@ -23,7 +23,7 @@ from flask import request
 
 import legal
 from dash3d import callbacks, clientside, config  # noqa: F401  (callbacks, clientside: register the callbacks)
-from dash3d.api import MAPLIBRE, bp as api_blueprint
+from dash3d.api import BUILD, MAPLIBRE, bp as api_blueprint
 from dash3d.layout import META_TAGS, PAGE_TITLE, PAGE_TITLE_DE, lang_of, make_layout
 from dash3d.terrain import warm_dem
 
@@ -33,9 +33,10 @@ app = Dash(
     title=PAGE_TITLE,
     meta_tags=META_TAGS,
     index_string=config.INDEX_STRING,
-    # MapLibre is served from here (assets3d/vendor), so visitors' browsers contact no third party
-    external_stylesheets=[f"/static3d/{MAPLIBRE}/maplibre-gl.css", "/static3d/style3d.css"],
-    external_scripts=[f"/static3d/{MAPLIBRE}/maplibre-gl.js", "/static3d/map3d.js"],
+    # MapLibre is served from here (assets3d/vendor), so visitors' browsers contact no third party. Its path
+    # holds its version and our own files carry the build (?v=), so browsers may keep all of them (api.py).
+    external_stylesheets=[f"/static3d/{MAPLIBRE}/maplibre-gl.css", f"/static3d/style3d.css?v={BUILD}"],
+    external_scripts=[f"/static3d/{MAPLIBRE}/maplibre-gl.js", f"/static3d/map3d.js?v={BUILD}"],
     suppress_callback_exceptions=True,             # the page (layout.py) arrives by callback, per language
 )
 server = app.server

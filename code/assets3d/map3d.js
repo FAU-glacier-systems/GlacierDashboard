@@ -471,6 +471,7 @@
       map.on("moveend", () => { if (!S.flight) rested(); });   // a peak flight calls it when it ends
 
       S.loaded = true;
+      if (map.getZoom() >= PEAK_ZOOM) loadPeaks();   // a link opens close in without moving: labels anyway
       map.once("idle", updatePeakLabels);      // the city labels, before any move
       showIntro();
       apply();

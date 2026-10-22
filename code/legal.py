@@ -11,7 +11,7 @@ CONTACT_EMAIL = "oskar.herrmann@fau.de"
 CONTACT_INSTITUTE = {"de": "Institut für Geographie", "en": "Institute of Geography"}
 CONTACT_ADDRESS = "Wetterkreuz 15, 91058 Erlangen"
 
-STATEMENT_DATE = {"de": "07.10.2026", "en": "7 October 2026"}
+STATEMENT_DATE = {"de": "22.10.2026", "en": "22 October 2026"}
 
 # slug per page and language; the dashboard's footer links to the pages in its own language
 PAGES = {
@@ -32,6 +32,7 @@ SOURCES_TITLE = {
            "Karte: MapLibre"),
 }
 SOURCES_LABEL = {"en": "Data sources and licences", "de": "Datenquellen und Lizenzen"}
+SOURCES_WORD = {"en": "Sources", "de": "Quellen"}
 
 # the dashboard per language (layout.py), and the switch to the other language
 HOME = {"en": "/", "de": "/de"}
@@ -145,7 +146,8 @@ dieser Website von unserem Server. Dabei werden keine Daten über Sie an Dritte 
 
 <h2>Lokaler Speicher, Cookies</h2>
 <p>Diese Website setzt keine Cookies und verwendet keine Analyse- oder Tracking-Dienste. Im lokalen Speicher
-Ihres Browsers werden zwei Einstellungen abgelegt: die gewählte Darstellung (hell/dunkel) und, ob Sie den
+Ihres Browsers werden zwei Einstellungen abgelegt: die gewählte Darstellung (hell/dunkel, mit dem Zeitpunkt
+der Wahl) und, ob Sie den
 Hinweis beim ersten Besuch geschlossen haben. Sie werden nicht an uns übertragen und dienen nur dazu, die
 Website so anzuzeigen, wie Sie es gewählt haben (§ 25 Abs. 2 Nr. 2 TDDDG). Sie können sie jederzeit in Ihren
 Browsereinstellungen löschen.</p>
@@ -265,7 +267,8 @@ No data about you are passed on to third parties.</p>
 
 <h2>Local storage, cookies</h2>
 <p>This website sets no cookies and uses no analytics or tracking services. Two settings are kept in your
-browser's local storage: the chosen appearance (light/dark) and whether you closed the hint shown on your
+browser's local storage: the chosen appearance (light/dark, with the time it was chosen) and whether you
+closed the hint shown on your
 first visit. They are not sent to us and only serve to show the website the way you chose (§ 25 (2) no. 2
 TDDDG). You can delete them at any time in your browser settings.</p>
 
@@ -350,9 +353,10 @@ def legal_links(lang):
 
 
 def sources_link(lang):
-    """The small © on the map, linking to the data sources."""
+    """The small "© Sources" on the map (only © on phones, style3d.css), linking to the data sources."""
     from dash import html
-    return html.A("©", href=SOURCES_URL[lang], className="sources-link", title=SOURCES_TITLE[lang],
+    return html.A(["©", html.Span(f" {SOURCES_WORD[lang]}", className="sources-word")], href=SOURCES_URL[lang],
+                  className="sources-link", title=SOURCES_TITLE[lang],
                   **{"aria-label": SOURCES_LABEL[lang]})
 
 

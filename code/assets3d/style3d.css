@@ -190,6 +190,7 @@ html[data-theme="dark"][data-prop="smb"] .dock, html[data-theme="dark"][data-pro
 /* Funding logos, always visible under the toolbar on the right */
 .logo-corner { position: absolute; z-index: 2; right: 14px; bottom: 3px; display: flex; gap: 8px; align-items: center; }
 .logo-corner img { height: 18px; width: auto; display: block; }
+.logo-corner .funded-text { font-size: 11px; color: var(--muted); text-shadow: 0 0 3px var(--bg); white-space: nowrap; }
 html[data-theme="dark"] .logo-corner .logo-fau { filter: brightness(0) invert(0.9); }
 /* the ERC/EU logo comes on black; the light theme gets a copy with a transparent background and dark text */
 .logo-corner .logo-erc { border-radius: 0; }
@@ -271,4 +272,6 @@ html[data-theme="dark"] .maplibregl-ctrl-group .maplibregl-ctrl-icon { filter: i
   .legal-corner .legal-links { font-size: 10px; gap: 2px 8px; }
   .logo-corner { right: 8px; gap: 6px; }
   .logo-corner img { height: 13px; }
+  .logo-corner .funded-text { display: none; }
+  .sources-word { display: none; }
 }

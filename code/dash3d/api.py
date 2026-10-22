@@ -61,7 +61,9 @@ def _binary(chunks):
 
 @bp.route("/static3d/<path:name>")
 def static3d(name):
-    return send_from_directory(ASSETS3D_DIR, name, max_age=60)
+    # fixed per URL: MapLibre's path holds its version, our files are asked for with the build (?v=)
+    fixed = name.startswith("vendor/") or request.args.get("v") == BUILD
+    return send_from_directory(ASSETS3D_DIR, name, max_age=31536000 if fixed else 60)
 
 
 @bp.route("/api3d/terrain/<version>/<int:z>/<int:x>/<int:y>.png")

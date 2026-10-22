@@ -1,11 +1,18 @@
-# Versions running on the production server (Python 3.12)
+# Versions for the production server (Python 3.12). pip-audit found no known vulnerabilities in them on 2026-10-22;
+# the last six are pulled in by Dash and Flask and pinned here for their security fixes.
 dash==4.0.0
-Flask==3.1.2
+Flask==3.1.3
 gunicorn==26.2.0
 netCDF4==1.7.4
 numpy==2.4.2
 pandas==3.0.0
 plotly==6.5.2
 xarray==2026.1.0
-pillow==12.1.1
+pillow==13.0.0
 pyproj==3.8.0
+Werkzeug==3.1.9
+urllib3==2.8.0
+requests==2.33.0
+setuptools==83.0.0
+certifi==2026.10.19
+idna==3.15
