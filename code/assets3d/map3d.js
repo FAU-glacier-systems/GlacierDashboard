@@ -312,7 +312,10 @@
     const bedKey = idList(missing);
     if (missing.length && !S.bedReq.has(bedKey)) {
       S.bedReq.add(bedKey);
+      const gl = S.gl;
+      let ok = false;
       fetchBuf(`${origin()}/api3d/beds?ids=${bedKey}`).then((buf) => {
+        if (S.gl !== gl) return;               // the WebGL context was replaced meanwhile (contextRestored)
         let off = 0;
         for (const [r, s] of missing) {
           const [nx, ny] = dims(S.cfg.meshes[r], s), n = nx * ny;
@@ -321,7 +324,11 @@
           if (old) freeRecord(old);
           S.glaciers.set(r, makeRecord(r, s, bed));
         }
-      }).catch(() => {}).finally(() => { S.bedReq.delete(bedKey); S.frameShown = null; sync(); });
+        ok = true;
+      }).catch(() => {}).finally(() => {
+        S.bedReq.delete(bedKey); S.frameShown = null;
+        retryLater(ok);                         // a failure (busy server, network) is tried again after a pause
+      });
     }
 
     // draw what is loaded (at its current level of detail) until the rest arrives
@@ -335,6 +342,8 @@
     S.frameReq = url;
     fetchBuf(url).then((buf) => {
       if (S.frameReq !== url) return;          // a newer request took over
+      if (buf.byteLength < ready.reduce((sum, [r, s]) => { const [nx, ny] = dims(S.cfg.meshes[r], s); return sum + nx * ny * 2; }, 0))
+        throw new Error("short");               // not a frame (an error page from a read-ahead)
       let off = 0;
       for (const [r, s] of ready) {
         const G = S.glaciers.get(r);
@@ -344,16 +353,18 @@
         if (st.variable !== "thk") { prop = new Uint8Array(buf, off, n); off += n + (n % 2); }
         if (G && G.s === s) applyFrame(G, thk, prop, st.variable);
       }
-      S.frameShown = url;
+      S.frameShown = url; S.failures = 0;
       if (S.hover) showHover();            // the label follows the shown year
       S.map.triggerRepaint();
       if (st.playing) {                       // read ahead: the next year of the same glaciers
         const next = st.year >= S.cfg.years[1] ? S.cfg.years[0] : st.year + 1;
         const nu = framesUrl(ready, st, next);
-        if (!S.prefetch.has(nu)) S.prefetch.set(nu, fetch(nu).then((r) => r.arrayBuffer()));
+        if (!S.prefetch.has(nu)) S.prefetch.set(nu, fetch(nu).then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }));
         while (S.prefetch.size > 4) S.prefetch.delete(S.prefetch.keys().next().value);
       }
-    }).catch(() => {}).finally(() => {
+    }).catch(() => {
+      if (S.frameReq === url) { S.frameReq = null; retryLater(false); }   // else the ice would wait for the next move
+    }).finally(() => {
       if (S.frameReq === url) S.frameReq = null;
     });
 
@@ -366,6 +377,15 @@
         if (S.glaciers.size <= 180) break;
       }
     }
+  }
+
+  // sync again: at once after a success, after a pause growing to 8 s after failures in a row (a busy server answers
+  // 429 when a whole room opens the page at once), one pending retry at a time
+  function retryLater(ok) {
+    if (ok) { S.failures = 0; sync(); return; }
+    if (S.retryTimer) return;
+    S.failures = (S.failures || 0) + 1;
+    S.retryTimer = setTimeout(() => { S.retryTimer = null; sync(); }, Math.min(1000 * 2 ** (S.failures - 1), 8000));
   }
 
   // ---------------------------------------------------------------- camera in the address bar
@@ -417,19 +437,41 @@
     S.urlView = viewFromUrl();
     S.names = new Map(cfg.glaciers.features.map((f) => [f.properties.rgi, f.properties.name]));
     S.centres = cfg.glaciers.features.map((f) => [f.properties.rgi, f.geometry.coordinates]);
-    const map = new maplibregl.Map({
-      container: el,
-      // no paint transitions: the terrain caches draped layers, a half-finished fade would stay visible
-      style: { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#202020" } }],
-               // globe when zoomed out, flat map from zoom 10 on (MapLibre's "globe" switches at 11..12, too early)
-               projection: { type: ["interpolate", ["linear"], ["zoom"], 9, "vertical-perspective", 10, "mercator"] },
-               transition: { duration: 0, delay: 0 } },
-      ...(S.urlView || { bounds: cfg.alps_bounds, fitBoundsOptions: { padding: 30 } }),
-      maxPitch: MAX_PITCH,
-      attributionControl: false,
-      locale: { "NavigationControl.ResetBearing": cfg.t.compass },   // the compass tooltip, in the page's language
-    });
+    let map;
+    try {
+      map = new maplibregl.Map({
+        container: el,
+        // no paint transitions: the terrain caches draped layers, a half-finished fade would stay visible
+        style: { version: 8, sources: {}, layers: [{ id: "bg", type: "background", paint: { "background-color": "#202020" } }],
+                 // globe when zoomed out, flat map from zoom 10 on (MapLibre's "globe" switches at 11..12, too early)
+                 projection: { type: ["interpolate", ["linear"], ["zoom"], 9, "vertical-perspective", 10, "mercator"] },
+                 transition: { duration: 0, delay: 0 } },
+        ...(S.urlView || { bounds: cfg.alps_bounds, fitBoundsOptions: { padding: 30 } }),
+        maxPitch: MAX_PITCH,
+        attributionControl: false,
+        locale: { "NavigationControl.ResetBearing": cfg.t.compass },   // the compass tooltip, in the page's language
+      });
+    } catch (e) {
+      // no WebGL (switched off, or a very old device): say so instead of an empty page
+      const note = document.createElement("div");
+      note.className = "webgl-note";
+      note.textContent = cfg.t.no_webgl || "This map needs WebGL, which this browser does not provide.";
+      el.appendChild(note);
+      S.map = true;                                 // do not try again
+      return true;
+    }
     S.map = map;
+    // phones drop the WebGL context under memory pressure or in the background; MapLibre restores its own layers
+    // but not the ice: everything on the GPU is gone, so it is added again and reloaded
+    map.on("webglcontextrestored", () => {
+      const readd = () => {
+        S.glaciers.clear(); S.visible = []; S.progs = {}; S.frameShown = null; S.frameReq = null;
+        S.appliedVar = null; S.appliedTheme = null;
+        if (!map.getLayer("ice")) map.addLayer(iceLayer);
+        apply();
+      };
+      if (map.isStyleLoaded()) readd(); else map.once("style.load", readd);
+    });
     window._map3d = map;   // handy for debugging in the console
     map.addControl(themeControl(), "top-right");   // above the zoom buttons
     map.addControl(new maplibregl.NavigationControl({ showZoom: false, visualizePitch: true }), "top-right");   // compass only

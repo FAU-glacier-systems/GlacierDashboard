@@ -291,3 +291,23 @@ html[data-theme="dark"] .maplibregl-ctrl-group .maplibregl-ctrl-icon { filter: i
   .logo-corner .funded-text { display: none; }
   .sources-word { display: none; }
 }
+/* narrow phones (360px is common on Android): tighter links and logos, so "Deutsch" keeps clear of the FAU logo */
+@media (max-width: 400px) {
+  .legal-corner { gap: 8px; }
+  .legal-corner .legal-links { gap: 2px 6px; }
+  .logo-corner img { height: 12px; }
+}
+/* the narrowest phones (320px): the logos go above the links, the year marks get smaller */
+@media (max-width: 340px) {
+  .logo-corner { bottom: 19px; }
+  .bottom-stack { bottom: 38px; }
+  .dock .dash-slider-mark { font-size: 10px; }
+  .map-title .year-label { font-size: 26px; }
+}
+
+/* no WebGL (map3d.js): a note where the map would be */
+.webgl-note {
+  position: absolute; top: 50%; left: 16px; right: 16px; transform: translateY(-50%); z-index: 1;
+  max-width: 420px; margin: 0 auto; padding: 12px 14px; font-size: 14px; line-height: 1.4; text-align: center;
+  color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 10px;
+}

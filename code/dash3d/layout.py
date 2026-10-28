@@ -71,6 +71,7 @@ TEXTS = {
         "peak_tip": "Click to fly to this peak",
         "update": "A new version of this page is available.", "reload": "Reload",
         "in": "in", "of": "of", "gone": "gone", "decimal": ".",
+        "no_webgl": "This 3D map needs WebGL, which this browser does not provide (switched off, or an old device).",
         "thickness": "Thickness", "compass": "Drag to rotate the map; click to turn north and flat, click again to turn back",
     },
     "de": {
@@ -93,10 +94,11 @@ TEXTS = {
         "peak_tip": "Klicken, um zu diesem Gipfel zu fliegen",
         "update": "Eine neue Version dieser Seite ist verfügbar.", "reload": "Neu laden",
         "in": "im Jahr", "of": "von", "gone": "verschwunden", "decimal": ",",
+        "no_webgl": "Diese 3D-Karte braucht WebGL, das dieser Browser nicht bietet (ausgeschaltet oder ein älteres Gerät).",
         "thickness": "Eisdicke", "compass": "Ziehen, um die Karte zu drehen; klicken für Norden und flach, erneut klicken für zurück",
     },
 }
-BROWSER_TEXTS = ("more", "none", "peak", "peak_tip", "update", "reload", "title_tip", "in", "of", "gone",
+BROWSER_TEXTS = ("more", "none", "peak", "peak_tip", "update", "reload", "title_tip", "no_webgl", "in", "of", "gone",
                  "decimal", "thickness", "theme", "play", "pause", "compass", "area_tip")
 
 # [rgi, name] of all glaciers, named ones first (alphabetically), then the unnamed ones by RGI ID
