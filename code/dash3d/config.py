@@ -26,14 +26,14 @@ LANGS = ("en", "de")
 VAR_LABELS = {
     "en": {
         "thk": "Thickness (m)",
-        "velsurf_mag": "Velocity (m/a)",
-        "smb": "Surface Mass Balance (m/a)",
+        "velsurf_mag": "Velocity (m/year)",
+        "smb": "Surface Mass Balance (m/year)",
         "mean_temp": "Mean Temperature (°C)",
     },
     "de": {
         "thk": "Eisdicke (m)",
-        "velsurf_mag": "Fließgeschwindigkeit (m/a)",
-        "smb": "Oberflächenmassenbilanz (m/a)",
+        "velsurf_mag": "Fließgeschwindigkeit (m/Jahr)",
+        "smb": "Oberflächenmassenbilanz (m/Jahr)",
         "mean_temp": "Mitteltemperatur (°C)",
     },
 }

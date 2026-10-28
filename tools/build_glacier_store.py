@@ -39,7 +39,7 @@ ICE_MIN_THK = 0.5                                      # m; thinner ice counts a
 FOOTPRINT_DILATE = 4                                   # cells around the initial ice outline
 FOOTPRINT_BLUR = 3
 QUANT = {                                              # value = offset + q * scale, q = 0..254
-    "velsurf_mag": (0.0, 1.0),                         # 0..254 m/a
+    "velsurf_mag": (0.0, 1.0),                         # 0..254 m/year
     "smb": (-12.7, 0.1),                               # -12.7..12.7 m w.e./a
     "mean_temp": (-25.4, 0.2),                         # -25.4..25.4 degC
 }
