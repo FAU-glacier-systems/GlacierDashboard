@@ -10,6 +10,7 @@
   const S = {
     map: null, loaded: false, cfg: null, state: null, appliedTheme: null, appliedVar: null, rgi: null,
     glaciers: new Map(),        // rgi -> GPU record
+    pending: new Map(),         // rgi -> GPU record at a new level of detail, waiting for its ice (sync)
     visible: [],                // glaciers currently drawn
     frameReq: null,             // url of the frames request in flight
     frameShown: null,           // url of the frames currently drawn
@@ -307,8 +308,15 @@
     if (!S.loaded || !S.state) return;
     const st = S.state, zoom = S.map.getZoom(), ids = wantedGlaciers();
     const want = ids.map((r) => [r, strideFor(r, zoom)]);
+    // a glacier at a new level of detail is loaded beside the drawn one (S.pending) and replaces it only once its ice
+    // has arrived too, so it never vanishes in between; back at the drawn level, the one loading is dropped
+    const have = (r, s) => { const G = S.glaciers.get(r), P = S.pending.get(r); return (G && G.s === s) || (P && P.s === s); };
+    for (const [r, s] of want) {
+      const G = S.glaciers.get(r), P = S.pending.get(r);
+      if (P && G && G.s === s) { freeRecord(P); S.pending.delete(r); }
+    }
 
-    const missing = want.filter(([r, s]) => { const G = S.glaciers.get(r); return !G || G.s !== s; });
+    const missing = want.filter(([r, s]) => !have(r, s));
     const bedKey = idList(missing);
     if (missing.length && !S.bedReq.has(bedKey)) {
       S.bedReq.add(bedKey);
@@ -320,9 +328,10 @@
         for (const [r, s] of missing) {
           const [nx, ny] = dims(S.cfg.meshes[r], s), n = nx * ny;
           const bed = new Float32Array(buf, off, n); off += n * 4;
-          const old = S.glaciers.get(r);
-          if (old) freeRecord(old);
-          S.glaciers.set(r, makeRecord(r, s, bed));
+          const old = S.glaciers.get(r), loading = S.pending.get(r);
+          if (loading) { freeRecord(loading); S.pending.delete(r); }
+          if (old && old.ready) S.pending.set(r, makeRecord(r, s, bed));
+          else { if (old) freeRecord(old); S.glaciers.set(r, makeRecord(r, s, bed)); }
         }
         ok = true;
       }).catch(() => {}).finally(() => {
@@ -334,7 +343,7 @@
     // draw what is loaded (at its current level of detail) until the rest arrives
     S.visible = ids.map((r) => S.glaciers.get(r)).filter(Boolean);
     S.map.triggerRepaint();
-    const ready = want.filter(([r, s]) => { const G = S.glaciers.get(r); return G && G.s === s; });
+    const ready = want.filter(([r, s]) => have(r, s));
     if (!ready.length) { S.frameShown = null; return; }
 
     const url = framesUrl(ready, st, st.year);
@@ -346,13 +355,18 @@
         throw new Error("short");               // not a frame (an error page from a read-ahead)
       let off = 0;
       for (const [r, s] of ready) {
-        const G = S.glaciers.get(r);
+        const G = S.glaciers.get(r), P = S.pending.get(r);
         const [nx, ny] = dims(S.cfg.meshes[r], s), n = nx * ny;
         const thk = new Uint16Array(buf, off, n); off += n * 2;
         let prop = null;
         if (st.variable !== "thk") { prop = new Uint8Array(buf, off, n); off += n + (n % 2); }
-        if (G && G.s === s) applyFrame(G, thk, prop, st.variable);
+        if (P && P.s === s) {                  // the new level of detail is complete: it takes over
+          applyFrame(P, thk, prop, st.variable);
+          if (G) freeRecord(G);
+          S.glaciers.set(r, P); S.pending.delete(r);
+        } else if (G && G.s === s) applyFrame(G, thk, prop, st.variable);
       }
+      S.visible = ids.map((r) => S.glaciers.get(r)).filter(Boolean);
       S.frameShown = url; S.failures = 0;
       if (S.hover) showHover();            // the label follows the shown year
       S.map.triggerRepaint();
@@ -369,8 +383,9 @@
     });
 
     // free GPU memory of glaciers far away
+    const keep = new Set(ids);
+    for (const [r, P] of S.pending) if (!keep.has(r)) { freeRecord(P); S.pending.delete(r); }
     if (S.glaciers.size > 250) {
-      const keep = new Set(ids);
       for (const [r, G] of S.glaciers) {
         if (keep.has(r)) continue;
         freeRecord(G); S.glaciers.delete(r);
@@ -465,7 +480,7 @@
     // but not the ice: everything on the GPU is gone, so it is added again and reloaded
     map.on("webglcontextrestored", () => {
       const readd = () => {
-        S.glaciers.clear(); S.visible = []; S.progs = {}; S.frameShown = null; S.frameReq = null;
+        S.glaciers.clear(); S.pending.clear(); S.visible = []; S.progs = {}; S.frameShown = null; S.frameReq = null;
         S.appliedVar = null; S.appliedTheme = null;
         if (!map.getLayer("ice")) map.addLayer(iceLayer);
         apply();
