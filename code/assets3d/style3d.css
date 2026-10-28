@@ -203,10 +203,11 @@ html[data-theme="dark"] .theme-ctrl button { color: #e6e6e6; }
 .logo-corner { position: absolute; z-index: 2; right: 14px; bottom: 3px; display: flex; gap: 8px; align-items: center; }
 .logo-corner img { height: 18px; width: auto; display: block; }
 .logo-corner .funded-text { font-size: 11px; color: var(--muted); text-shadow: 0 0 3px var(--bg); white-space: nowrap; }
-html[data-theme="dark"] .logo-corner .logo-fau { filter: brightness(0) invert(0.9); }
+/* FAU and IGM in one colour: white on the dark theme, black on the light one */
+.logo-corner .logo-fau, .logo-corner .logo-igm { filter: brightness(0); }
+html[data-theme="dark"] .logo-corner .logo-fau, html[data-theme="dark"] .logo-corner .logo-igm { filter: brightness(0) invert(0.9); }
 .logo-igm-link { display: block; line-height: 0; }
 .logo-corner .logo-igm { height: 24px; }
-html[data-theme="dark"] .logo-corner .logo-igm { filter: brightness(1.6); }   /* its blue, lighter on the dark map */
 /* the ERC/EU logo comes on black; the light theme gets a copy with a transparent background and dark text */
 .logo-corner .logo-erc { border-radius: 0; }
 .logo-corner .logo-erc-light, html[data-theme="light"] .logo-corner .logo-erc-dark { display: none; }
