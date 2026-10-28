@@ -698,13 +698,17 @@
 
   // the compass turns the map to north and flat; pressed again before the camera moves elsewhere, it turns back to
   // the bearing and tilt from before. Runs ahead of MapLibre's own click handler (capture phase) so it can stop it.
+  // On touch screens one tap gives two clicks (MapLibre's own from the touch, then the browser's): the second within
+  // half a second is dropped, or it would count as the second press and turn straight back.
   function compassToggle(map) {
-    let before = null, after = null;
+    let before = null, after = null, last = 0;
     const same = (a, b) => Math.abs(a.zoom - b.zoom) < 0.01 && Math.abs(a.center.lng - b.center.lng) < 1e-6
       && Math.abs(a.center.lat - b.center.lat) < 1e-6 && Math.abs(a.bearing - b.bearing) < 0.5 && Math.abs(a.pitch - b.pitch) < 0.5;
     const cam = () => ({ center: map.getCenter(), zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() });
     map.getContainer().addEventListener("click", (e) => {
       if (!e.target.closest || !e.target.closest(".maplibregl-ctrl-compass")) return;
+      if (e.timeStamp - last < 500) { e.stopPropagation(); return; }
+      last = e.timeStamp;
       if (before && (!after || same(cam(), after))) {      // also while the reset is still turning
         e.stopPropagation();
         map.easeTo({ bearing: before.bearing, pitch: before.pitch, duration: 1000 });

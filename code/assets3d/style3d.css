@@ -266,6 +266,12 @@ html[data-theme="light"] .logo-corner .logo-erc-light { display: block; }
 html[data-theme="dark"] .maplibregl-ctrl-group { background: #1a1a1a; }
 html[data-theme="dark"] .maplibregl-ctrl-group button + button { border-top-color: #333; }
 html[data-theme="dark"] .maplibregl-ctrl-group .maplibregl-ctrl-icon { filter: invert(1); }
+/* touch screens: MapLibre's 29 px buttons (theme, compass, home) are too small for a finger */
+@media (pointer: coarse) {
+  .app3d .maplibregl-ctrl-group button { width: 40px; height: 40px; }
+  .theme-ctrl button { font-size: 18px; }
+  .home-ctrl .maplibregl-ctrl-icon { background-size: 21px; }
+}
 
 /* Phones: full-width top panel with the map buttons below it; icon-only play, scenario without its volume */
 @media (max-width: 640px) {
