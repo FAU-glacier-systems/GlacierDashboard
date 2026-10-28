@@ -21,7 +21,7 @@
   };
   const origin = () => window.location.origin;
   const MAX_PITCH = 80;
-  const LIGHT = normalize([-0.55, 0.55, 0.65]);   // from the north-west, as on maps
+  const LIGHT = normalize([0, -0.78, 0.65]);      // (east, north, up): the sun in the south, about 40° high
   // The terrain under the ice is a raster resampled from the model bedrock; the coarser the terrain tiles (the
   // further away), the more it smooths narrow valleys upwards. Lift the ice by about a tenth of the terrain
   // tile resolution so it is not hidden there; invisible at that distance.
@@ -500,7 +500,9 @@
       map.addSource("dem", dem);   // its sources are credited in the Impressum ("Daten und Quellen")
       map.addSource("dem-hs", dem);   // hillshade wants its own source
       map.setTerrain({ source: "dem", exaggeration: 1.0 });
-      map.addLayer({ id: "hillshade", type: "hillshade", source: "dem-hs" });
+      // lit from the south like the ice (LIGHT), fixed to the map so the shadows stay put when it turns
+      map.addLayer({ id: "hillshade", type: "hillshade", source: "dem-hs",
+                     paint: { "hillshade-illumination-direction": 180, "hillshade-illumination-anchor": "map" } });
       map.addLayer(iceLayer);
 
       // glacier label on hover, selection on click (no markers: the ice itself shows where glaciers are)
