@@ -124,6 +124,9 @@ html[data-theme="dark"] .theme-ctrl button { color: #e6e6e6; }
   background-size: 100cqw 100%;
 }
 .dock .dash-slider-thumb { background: var(--year-colour, #6baed6); border: 2px solid var(--fg); }
+/* no focus ring (Dash's, blue): the slider focuses the dot on every click and touch, so it would always show;
+   focused, the dot still grows a little (Dash) */
+.app3d .dock .dash-slider-thumb:focus { outline: none; }
 /* one line: play, slider, scenario */
 .dock { display: flex; align-items: center; gap: 16px; }
 .dock-time { order: 1; flex: 1 1 auto; min-width: 0; }
