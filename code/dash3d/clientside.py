@@ -194,7 +194,8 @@ clientside_callback(
 )
 
 # the year in the title, and the year slider as climate stripes: up to the shown year one stripe per year, coloured
-# by the warming of the Alps since 1871-1900 in the chosen scenario (cfg.warming), on one scale for all scenarios
+# by the warming of the Alps since 1871-1900 in the chosen scenario (cfg.warming, averaged over 11 years, layout.py),
+# on one scale for all scenarios
 # (white at the 2000-2019 level, cfg.warming_base; darkest blue 1.5 °C below it, darkest red 4.5 °C above it), so
 # RCP 8.5 is visibly redder; the dot takes the
 # colour of its year. The slider's filled part shows its share of the stripes (--year-frac, style3d.css).

@@ -65,8 +65,8 @@ TEXTS = {
         "funded_short": "Funded by the European Union",
         "igm_tip": "Modelled with IGM, the Instructed Glacier Model",
         # in the browser
-        "warming_tip": "Warming of the Alps in {year} compared with pre-industrial times (1871–1900): climate model "
-                       "plus observed warming up to 2000–2019 (MeteoSwiss)",
+        "warming_tip": "Warming of the Alps around {year} (11-year average) compared with pre-industrial times "
+                       "(1871–1900): climate model plus observed warming up to 2000–2019 (MeteoSwiss)",
         "largest": "Largest glaciers", "none": "Nothing found", "peak": "Peak", "glacier": "Glacier",
         "peak_tip": "Click to fly to this peak",
         "update": "A new version of this page is available.", "reload": "Reload",
@@ -91,8 +91,8 @@ TEXTS = {
         "funded": "Gefördert von der Europäischen Union · Europäischer Forschungsrat",
         "funded_short": "Gefördert von der Europäischen Union",
         "igm_tip": "Modelliert mit IGM, dem Instructed Glacier Model",
-        "warming_tip": "Erwärmung der Alpen im Jahr {year} gegenüber vorindustrieller Zeit (1871–1900): Klimamodell "
-                       "plus beobachtete Erwärmung bis 2000–2019 (MeteoSchweiz)",
+        "warming_tip": "Erwärmung der Alpen um {year} (Mittel über 11 Jahre) gegenüber vorindustrieller Zeit "
+                       "(1871–1900): Klimamodell plus beobachtete Erwärmung bis 2000–2019 (MeteoSchweiz)",
         "largest": "Größte Gletscher", "none": "Nichts gefunden", "peak": "Gipfel", "glacier": "Gletscher",
         "peak_tip": "Klicken, um zu diesem Gipfel zu fliegen",
         "update": "Eine neue Version dieser Seite ist verfügbar.", "reload": "Neu laden",
@@ -107,6 +107,11 @@ BROWSER_TEXTS = ("largest", "none", "peak", "glacier", "peak_tip", "update", "re
 # [rgi, name] of all glaciers, named ones first (alphabetically), then the unnamed ones by RGI ID
 SEARCH_LIST = sorted(([r, config.GLACIER_NAMES.get(r, "")] for r in GLACIERS),
                      key=lambda e: (not e[1], e[1].lower(), e[0]))
+
+# the warming averaged over the 11 years around each year (fewer at 2000 and 2100): single years jump by about
+# half a degree with the model's weather, and the scenarios part from 2020, so a single year can rank them wrongly
+WARMING_SMOOTH = [[round(float(row[max(k - 5, 0):k + 6].mean()) + config.PREINDUSTRIAL_OFFSET, 2) for k in range(len(row))]
+                  for row in WARMING]
 
 # the 5 largest glaciers by ice area this year (mean of the scenarios), offered by the empty search field
 _area = SERIES["area"][:, :, config.YEARS.index(config.DEFAULT_YEAR)].mean(axis=1)
@@ -129,7 +134,7 @@ _MAP_CONFIG = {
     "search": SEARCH_LIST,
     "largest": LARGEST,
     # warming since 1871-1900 per scenario and year, in °C: the model's (store.py) plus the observed 2000-2019 offset
-    "warming": [[round(float(v) + config.PREINDUSTRIAL_OFFSET, 2) for v in row] for row in WARMING],
+    "warming": WARMING_SMOOTH,
     "warming_base": config.PREINDUSTRIAL_OFFSET,   # 2000-2019: white in the climate stripes
     "default_rgi": config.DEFAULT_RGI,  # the glacier on page load; the button under the compass flies there
     "version": BUILD,                  # map3d.js offers a reload when the server's differs (api.py)
