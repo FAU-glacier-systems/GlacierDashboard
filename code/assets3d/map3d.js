@@ -984,7 +984,7 @@
   document.addEventListener("keydown", (e) => {
     const box = e.target.closest && e.target.closest(".glacier-search");
     if (!box) return;
-    const input = box.querySelector("input"), hits = [...box.querySelectorAll(".gs-hit:not(.is-hidden)")];
+    const input = box.querySelector("input"), hits = [...box.querySelectorAll(".gs-hit")];
     const at = hits.indexOf(e.target);
     if (e.key === "Escape") { e.target.blur(); return; }
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {

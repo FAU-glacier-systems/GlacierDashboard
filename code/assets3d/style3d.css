@@ -49,7 +49,8 @@ html[data-away] .maplibregl-ctrl.home-ctrl { display: block; }
   width: 340px; max-width: 100%;
   display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;   /* grows; its menus lie over the map */
 }
-/* Glacier search: type in the field; up to 5 results below it while it has the focus */
+/* Glacier search: type in the field; the results below it while it has the focus (the largest glaciers while it
+   is empty), scrolling when they do not fit; an icon tells glaciers (snowflake) from peaks (mountain) */
 .glacier-search { position: relative; }
 .glacier-search::before {
   content: ""; position: absolute; left: 10px; top: 50%; width: 14px; height: 14px; margin-top: -7px;
@@ -79,7 +80,7 @@ html[data-away] .maplibregl-ctrl.home-ctrl { display: block; }
 .gs-clear.is-hidden { display: none; }
 .gs-results {
   position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 6; display: grid; padding: 4px;
-  background: var(--bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
+  max-height: min(340px, 55vh); overflow-y: auto; overscroll-behavior: contain; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 18px rgba(0, 0, 0, 0.25);
 }
 .gs-results.is-empty, .glacier-search:not(:focus-within) .gs-results { display: none; }
 .gs-hit {
@@ -87,13 +88,16 @@ html[data-away] .maplibregl-ctrl.home-ctrl { display: block; }
   outline: none;
 }
 .gs-hit:hover, .gs-hit:focus { background: var(--hover); }
-.gs-hit.is-hidden { display: none; }
 .gs-hit { min-width: 0; }
+.gs-hit.is-hidden { display: none; }
+.gs-icon { flex: 0 0 13px; height: 13px; align-self: center; background: var(--muted);
+           -webkit-mask: var(--icon) center / contain no-repeat; mask: var(--icon) center / contain no-repeat; }
+.is-glacier .gs-icon { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M12.0 22.0L12.0 2.0M12.0 5.6l-2.3-2.3M12.0 5.6l2.3-2.3M20.7 17.0L3.3 7.0M6.5 8.8l-3.1 0.8M6.5 8.8l-0.8-3.1M20.7 7.0L3.3 17.0M6.5 15.2l-0.8 3.1M6.5 15.2l-3.1-0.8M12.0 18.4l2.3 2.3M12.0 18.4l-2.3 2.3M17.5 15.2l3.1-0.8M17.5 15.2l0.8 3.1M17.5 8.8l0.8-3.1M17.5 8.8l3.1 0.8'/%3E%3C/svg%3E"); }
+.is-peak .gs-icon { --icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='black'%3E%3Cpath d='M9 4 1 20h22L16.5 9.5 13.6 14z'/%3E%3C/svg%3E"); }
 .gs-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
 .gs-id { font-size: 11px; font-weight: 300; color: var(--muted); white-space: nowrap; overflow: hidden;
          text-overflow: ellipsis; flex: 0 3 auto; min-width: 0; }   /* shortens before the name */
-.gs-more { padding: 4px 8px; font-size: 12px; font-style: italic; color: var(--muted); }
-.gs-more:empty { display: none; }
+.gs-note { padding: 4px 8px; font-size: 12px; font-style: italic; color: var(--muted); }
 
 /* Theme switch: a map control (map3d.js) that presses the hidden Dash button */
 .theme-btn { display: none; }

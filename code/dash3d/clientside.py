@@ -39,36 +39,41 @@ for btn, menu, opt, store in (("cbar_btn", "prop_menu", "prop_opt", "property"),
         prevent_initial_call=True,
     )
 
-# search: up to 5 matches of what is typed (glacier name or RGI ID, peak name in any of its languages; a peak's
-# second line names the glacier it looks at) and how many more there are; names that start with it first,
-# glaciers before peaks. Nothing is shown while the field holds the selected glacier's name.
+# search: below the empty field the largest glaciers; below a typed one every match (glacier name or RGI ID, peak
+# name in any of its languages; a peak's second line names the glacier it looks at), in a list that scrolls, names
+# that start with it first, glaciers before peaks; an icon tells glaciers from peaks. Nothing is shown while the
+# field holds the selected glacier's name.
 clientside_callback(
     """function(text, ready, selected, cfg) {
-        const n = 5, q = (text || '').trim().toLowerCase();
+        const q = (text || '').trim().toLowerCase();
         const peaks = window.Map3D ? window.Map3D.peaks() : [];   // map3d.js loads them; [] until then
         const name = (r) => { const o = cfg.search.find(e => e[0] === r); return o ? (o[1] || r) : ''; };
-        const active = q !== '' && !(selected && text === name(selected));
+        const typed = q !== '', active = !(selected && text === name(selected));
+        // [id, name, second line, name starts with q, is a peak]
         let hits = [];
-        if (active) {
-            // [id, name, second line, name starts with q]
+        if (active && typed) {
             const g = cfg.search.filter(([r, nm]) => nm.toLowerCase().includes(q) || r.toLowerCase().includes(q))
-                .map(([r, nm]) => [r, nm || r, nm ? r : '', nm.toLowerCase().startsWith(q)]);
+                .map(([r, nm]) => [r, nm || r, nm ? r : '', nm.toLowerCase().startsWith(q), false]);
             const p = peaks.filter(e => e[8].includes(q))
-                .map(e => [e[0], e[1], [cfg.t.peak, e[2] != null ? `${e[2]} m` : '', e[6]].filter(x => x).join(' · '),
-                           e[8].split(' / ').some(nm => nm.startsWith(q))]);
+                .map(e => [e[0], e[1], [e[2] != null ? `${e[2]} m` : '', e[6]].filter(x => x).join(' · '),
+                           e[8].split(' / ').some(nm => nm.startsWith(q)), true]);
             hits = [...g.filter(h => h[3]), ...p.filter(h => h[3]), ...g.filter(h => !h[3]), ...p.filter(h => !h[3])];
+        } else if (active) {
+            hits = (cfg.largest || []).map(r => [r, name(r), name(r) !== r ? r : '', true, false]);
         }
-        const shown = hits.slice(0, n), more = hits.length - shown.length;
-        const slot = (f) => Array.from({length: n}, (_, i) => i < shown.length ? f(shown[i]) : '');
-        const note = more > 0 ? `${more} ${cfg.t.more}` : (active && !shown.length ? cfg.t.none : '');
-        return [shown.map(h => h[0]), slot(h => h[1]), slot(h => h[2]),
-                Array.from({length: n}, (_, i) => 'gs-hit' + (i < shown.length ? '' : ' is-hidden')),
-                note, 'gs-results' + (active ? '' : ' is-empty')];
+        const el = (type, props) => ({type, namespace: 'dash_html_components', props});
+        const rows = hits.map((h, i) => el('Div', {
+            id: {type: 'ghit', index: i}, n_clicks: 0, role: 'option', tabIndex: '-1',
+            className: 'gs-hit ' + (h[4] ? 'is-peak' : 'is-glacier'),
+            children: [el('Span', {className: 'gs-icon', title: h[4] ? cfg.t.peak : cfg.t.glacier}),
+                       el('Span', {className: 'gs-name', children: h[1]}),
+                       el('Span', {className: 'gs-id', children: h[2]})]}));
+        if (active && !typed && rows.length) rows.unshift(el('Div', {className: 'gs-note', children: cfg.t.largest}));
+        if (active && typed && !hits.length) rows.push(el('Div', {className: 'gs-note', children: cfg.t.none}));
+        return [hits.map(h => h[0]), rows, 'gs-results' + (rows.length ? '' : ' is-empty')];
     }""",
     Output("glacier_hits", "data"),
-    Output({"type": "ghit_name", "index": ALL}, "children"), Output({"type": "ghit_id", "index": ALL}, "children"),
-    Output({"type": "ghit", "index": ALL}, "className"),
-    Output("glacier_more", "children"), Output("glacier_results", "className"),
+    Output("glacier_results", "children"), Output("glacier_results", "className"),
     Input("glacier_search", "value"), Input("peaks_ready", "data"), State("selected_rgi", "data"),
     State("map_config", "data"),
 )
@@ -76,11 +81,11 @@ clientside_callback(
 # pick a result (click, or Enter for the first one) or clear (×). A glacier is selected; a peak only flies the
 # camera there (map3d.js). × clears the selection.
 clientside_callback(
-    """function(clicks, submits, cleared, hits) {
+    """function(clicks, submits, cleared, hits, text) {
         const t = window.dash_clientside.callback_context.triggered_id, nu = window.dash_clientside.no_update;
         let id;
         if (t === 'glacier_clear') id = null;
-        else if (t === 'glacier_search') id = (hits || [])[0];
+        else if (t === 'glacier_search') id = (text || '').trim() ? (hits || [])[0] : undefined;   // not the largest
         else if (t && t.type === 'ghit' && clicks[t.index]) id = (hits || [])[t.index];
         if (id === undefined) return nu;
         if (document.activeElement) document.activeElement.blur();   // closes the results
@@ -92,7 +97,7 @@ clientside_callback(
     }""",
     Output("rgi_select", "data"),
     Input({"type": "ghit", "index": ALL}, "n_clicks"), Input("glacier_search", "n_submit"),
-    Input("glacier_clear", "n_clicks"), State("glacier_hits", "data"),
+    Input("glacier_clear", "n_clicks"), State("glacier_hits", "data"), State("glacier_search", "value"),
     prevent_initial_call=True,
 )
 

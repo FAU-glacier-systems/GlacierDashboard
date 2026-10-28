@@ -8,7 +8,7 @@ import legal
 
 from .api import BUILD, PEAKS_URL
 from .colours import VAR_STYLE, colour_stops, var_config
-from .store import ALPS_BOUNDS, GLACIERS
+from .store import ALPS_BOUNDS, GLACIER_IDS, GLACIERS, SERIES
 from .terrain import DEM_MAXZOOM, TERRAIN_VERSION
 
 # page description and the preview shown when a link is shared (Mastodon, Slack, LinkedIn, messengers)
@@ -44,8 +44,6 @@ def glaciers_geojson():
     } for r in config.GLACIERS_DF.itertuples()]}
 
 
-SEARCH_HITS = 5                     # at most this many search results, no scrolling
-
 # the interface texts per language. Those used in the browser (clientside.py, map3d.js) go there in
 # map_config ("t").
 N = len(GLACIERS)
@@ -67,7 +65,7 @@ TEXTS = {
         "funded_short": "Funded by the European Union",
         "area_tip": "Ice area of the selection in",
         # in the browser
-        "more": "more – keep typing", "none": "Nothing found", "peak": "Peak",
+        "largest": "Largest glaciers", "none": "Nothing found", "peak": "Peak", "glacier": "Glacier",
         "peak_tip": "Click to fly to this peak",
         "update": "A new version of this page is available.", "reload": "Reload",
         "in": "in", "of": "of", "gone": "gone", "decimal": ".",
@@ -90,7 +88,7 @@ TEXTS = {
         "funded": "Gefördert von der Europäischen Union · Europäischer Forschungsrat",
         "funded_short": "Gefördert von der Europäischen Union",
         "area_tip": "Eisfläche der Auswahl im Jahr",
-        "more": "weitere – weiter tippen", "none": "Nichts gefunden", "peak": "Gipfel",
+        "largest": "Größte Gletscher", "none": "Nichts gefunden", "peak": "Gipfel", "glacier": "Gletscher",
         "peak_tip": "Klicken, um zu diesem Gipfel zu fliegen",
         "update": "Eine neue Version dieser Seite ist verfügbar.", "reload": "Neu laden",
         "in": "im Jahr", "of": "von", "gone": "verschwunden", "decimal": ",",
@@ -98,12 +96,16 @@ TEXTS = {
         "thickness": "Eisdicke", "compass": "Ziehen, um die Karte zu drehen; klicken für Norden und flach, erneut klicken für zurück",
     },
 }
-BROWSER_TEXTS = ("more", "none", "peak", "peak_tip", "update", "reload", "title_tip", "no_webgl", "in", "of", "gone",
+BROWSER_TEXTS = ("largest", "none", "peak", "glacier", "peak_tip", "update", "reload", "title_tip", "no_webgl", "in", "of", "gone",
                  "decimal", "thickness", "theme", "play", "pause", "compass", "area_tip")
 
 # [rgi, name] of all glaciers, named ones first (alphabetically), then the unnamed ones by RGI ID
 SEARCH_LIST = sorted(([r, config.GLACIER_NAMES.get(r, "")] for r in GLACIERS),
                      key=lambda e: (not e[1], e[1].lower(), e[0]))
+
+# the 5 largest glaciers by ice area this year (mean of the scenarios), offered by the empty search field
+_area = SERIES["area"][:, :, config.YEARS.index(config.DEFAULT_YEAR)].mean(axis=1)
+LARGEST = [GLACIER_IDS[k] for k in _area.argsort()[::-1][:5]]
 
 
 
@@ -120,6 +122,7 @@ _MAP_CONFIG = {
     "meshes": {r: {**g.mesh_info(), "k": k} for k, (r, g) in enumerate(GLACIERS.items())},
     "scenario_labels": config.SCENARIO_LABELS,
     "search": SEARCH_LIST,
+    "largest": LARGEST,
     "version": BUILD,                  # map3d.js offers a reload when the server's differs (api.py)
     "peaks_url": PEAKS_URL if config.PEAKS else None,   # loaded when the search is first used (map3d.js)
     "years": [config.YEARS[0], config.YEARS[-1]],
@@ -182,7 +185,8 @@ def make_page(app, lang):
                             ]) for var, label in config.VAR_LABELS[lang].items() if var in VAR_STYLE
                         ]),
                     ]),
-                    # glacier search: type in the field, up to 5 matches below it (clientside.py fills them in)
+                    # glacier search: the largest glaciers below the empty field, every match below a typed one
+                    # (clientside.py fills them in)
                     html.Div(id="glacier_box", className="glacier-search", children=[
                         dcc.Input(id="glacier_search", type="text", inputMode="search", value="", placeholder=T["search"],
                                   autoComplete="off", spellCheck=False, n_submit=0, className="gs-input"),
@@ -193,14 +197,7 @@ def make_page(app, lang):
                         ]),
                         html.Button("×", id="glacier_clear", n_clicks=0, className="gs-clear is-hidden",
                                     title=T["show_all"], **{"aria-label": T["show_all"]}),
-                        html.Div(id="glacier_results", className="gs-results is-empty", role="listbox", children=[
-                            *[html.Div(id={"type": "ghit", "index": i}, n_clicks=0, role="option", tabIndex="-1",
-                                       className="gs-hit is-hidden", children=[
-                                html.Span(id={"type": "ghit_name", "index": i}, className="gs-name"),
-                                html.Span(id={"type": "ghit_id", "index": i}, className="gs-id"),
-                            ]) for i in range(SEARCH_HITS)],
-                            html.Div(id="glacier_more", className="gs-more"),
-                        ]),
+                        html.Div(id="glacier_results", className="gs-results is-empty", role="listbox"),
                     ]),
                 ]),
                 # the title, plain text on the map below the panel; a button inside the heading (keyboard, screen
