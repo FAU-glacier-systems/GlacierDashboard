@@ -89,10 +89,12 @@
     uniform sampler2D u_lut; uniform vec3 u_light;
     varying vec3 v_n; varying float v_t; varying float v_ice; varying float v_side;
     void main() {
-      if (v_ice < 0.4 || v_side < 0.0) discard;
+      // fades out between 0.38 and 0.44 of the smoothed ice (applyFrame): a soft outline instead of a pixel staircase
+      float a = smoothstep(0.38, 0.44, v_ice);
+      if (a <= 0.0 || v_side < 0.0) discard;
       vec3 c = v_t < -0.5 ? vec3(0.6) : texture2D(u_lut, vec2(clamp(v_t, 0.0, 1.0) * 0.99609375 + 0.001953125, 0.5)).rgb;
       float l = 0.5 + 0.6 * max(dot(normalize(v_n), u_light), 0.0);
-      gl_FragColor = vec4(c * l, 1.0);
+      gl_FragColor = vec4(c * l * a, a);              // premultiplied (render)
     }`;
 
   function compile(gl, shaderData) {
@@ -153,6 +155,8 @@
       // (MapLibre restores its own depth state after a custom layer)
       if (S.map.getZoom() < 8) gl.disable(gl.DEPTH_TEST);
       if (gl.bindVertexArray) gl.bindVertexArray(null);
+      gl.enable(gl.BLEND);                         // the soft outline (MapLibre resets its state after this layer)
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
       gl.useProgram(P.p);
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, S.lut);
@@ -240,6 +244,18 @@
     const v = S.cfg.vars[variable], span = v.hi - v.lo, { nx, ny, bed, dyn, h } = G;
     const z = new Float32Array(G.n), ice = new Float32Array(G.n);
     for (let k = 0; k < G.n; k++) { z[k] = bed[k] + thk[k] * 0.1; ice[k] = thk[k] >= 5 && Number.isFinite(z[k]) ? 1 : 0; }
+    // the ice smoothed over 5x5 cells (1-4-6-4-1 weights, along rows, then columns): the shader cuts it at about 0.4, so
+    // the outline runs smoothly across the cells instead of along their steps
+    const blur = (src, step, len, count, stride) => {
+      const out = new Float32Array(G.n);
+      for (let a = 0; a < count; a++) for (let b = 0; b < len; b++) {
+        let sum = 0;
+        for (let d = -2; d <= 2; d++) sum += [1, 4, 6, 4, 1][d + 2] * src[a * stride + Math.min(Math.max(b + d, 0), len - 1) * step];
+        out[a * stride + b * step] = sum / 16;
+      }
+      return out;
+    };
+    const smooth = blur(blur(ice, 1, nx, ny, nx), nx, ny, nx, 1);
     const vals = new Float32Array(G.n);
     for (let k = 0; k < G.n; k++) {
       vals[k] = variable === "thk" ? (thk[k] * 0.1 - v.lo) / span
@@ -250,11 +266,9 @@
       for (let i = 0; i < nx; i++) {
         const k = j * nx + i, iw = Math.max(i - 1, 0), ie = Math.min(i + 1, nx - 1);
         const ok = Number.isFinite(z[k]);
-        // where the ice ends: half ice-or-not, half that smoothed over the 3x3 neighbours (1-2-1 weights); the
-        // shader cuts at 0.4, so the outline runs between the cells with rounded corners instead of stair steps
-        const nb = 4 * ice[k] + 2 * (ice[j * nx + iw] + ice[j * nx + ie] + ice[jn * nx + i] + ice[js * nx + i])
-                 + ice[jn * nx + iw] + ice[jn * nx + ie] + ice[js * nx + iw] + ice[js * nx + ie];
-        const edge = 0.5 * ice[k] + nb / 32;
+        // where the ice ends: the smoothed ice, but at least 0.45 on ice, so narrow tongues and small patches
+        // keep a (rounded) piece instead of vanishing in the smoothing
+        const edge = Math.max(smooth[k], 0.45 * ice[k]);
         let val = vals[k];
         if (val < -0.5) {                // no value (just off the ice): the neighbours' colour, so the edge is not grey
           let sum = 0, cnt = 0;
