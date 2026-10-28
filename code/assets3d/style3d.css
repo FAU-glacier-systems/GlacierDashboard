@@ -114,12 +114,14 @@ html[data-theme="dark"] .theme-ctrl button { color: #e6e6e6; }
 /* on wide screens the top panel and the dock share one width, centred and clear of the map buttons */
 :root { --bar-w: min(1200px, calc(100vw - 130px)); }
 /* the years up to the shown one as climate stripes (--stripes, one per year over the whole slider, set with the
-   year and scenario in clientside.py): the filled part shows its share of them (--year-frac); the dot takes the
-   colour of its year (--year-colour). Before the stripes are set: blue to red. */
-.dock .dash-slider-track { height: 6px; }
+   year and scenario in clientside.py); the dot takes the colour of its year (--year-colour). The filled part shows
+   its share of them: sized to the track (container units), so they stay put while it is dragged (--year-frac only
+   for browsers without them: it follows the drag a moment late). Before the stripes are set: blue to red. */
+.dock .dash-slider-track { height: 6px; container-type: inline-size; }
 .app3d .dock .dash-slider-root .dash-slider-range {           /* outranks Dash's "included" fill */
   background: var(--stripes, linear-gradient(to right, #08306b, #2171b5, #6baed6, #deebf7, #fcbba1, #fb6a4a, #cb181d, #67000d))
               left / calc(100% / var(--year-frac, 1)) 100% no-repeat;
+  background-size: 100cqw 100%;
 }
 .dock .dash-slider-thumb { background: var(--year-colour, #6baed6); border: 2px solid var(--fg); }
 /* one line: play, slider, scenario */
