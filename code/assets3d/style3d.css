@@ -113,13 +113,14 @@ html[data-theme="dark"] .theme-ctrl button { color: #e6e6e6; }
 .year-label { font-weight: 700; line-height: 1; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
 /* on wide screens the top panel and the dock share one width, centred and clear of the map buttons */
 :root { --bar-w: min(1200px, calc(100vw - 130px)); }
-/* the year slider in the colours of the climate stripes, blue to red along the years; the dot takes the colour of
-   its year (--year-colour, set with the year in clientside.py from the same stops) */
-.dock .dash-slider-track {
-  height: 6px;
-  background: linear-gradient(to right, #08306b, #2171b5, #6baed6, #deebf7, #fcbba1, #fb6a4a, #cb181d, #67000d);
+/* the years up to the shown one in the colours of the climate stripes, blue to red over the whole slider: the filled
+   part shows its share of the ramp (--year-frac, set with the year in clientside.py); the dot takes the colour of
+   its year (--year-colour, from the same stops) */
+.dock .dash-slider-track { height: 6px; }
+.app3d .dock .dash-slider-root .dash-slider-range {           /* outranks Dash's "included" fill */
+  background: linear-gradient(to right, #08306b, #2171b5, #6baed6, #deebf7, #fcbba1, #fb6a4a, #cb181d, #67000d)
+              left / calc(100% / var(--year-frac, 1)) 100% no-repeat;
 }
-.app3d .dock .dash-slider-root .dash-slider-range { background: transparent; }   /* outranks Dash's "included" fill */
 .dock .dash-slider-thumb { background: var(--year-colour, #6baed6); border: 2px solid var(--fg); }
 /* one line: play, slider, scenario */
 .dock { display: flex; align-items: center; gap: 16px; }

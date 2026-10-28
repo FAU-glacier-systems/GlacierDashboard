@@ -194,16 +194,18 @@ clientside_callback(
 )
 
 # the year in the title; the slider's dot takes the year's colour on the climate-stripes ramp (the stops of the
-# slider track in style3d.css)
+# slider in style3d.css), its filled part the share of the ramp up to the year
 clientside_callback(
     """function(year, cfg) {
         if (year == null) return window.dash_clientside.no_update;
         const stops = ['#08306b', '#2171b5', '#6baed6', '#deebf7', '#fcbba1', '#fb6a4a', '#cb181d', '#67000d']
             .map(h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)));
-        const f = Math.min(Math.max((year - cfg.years[0]) / (cfg.years[1] - cfg.years[0]), 0), 1) * (stops.length - 1);
+        const frac = Math.min(Math.max((year - cfg.years[0]) / (cfg.years[1] - cfg.years[0]), 0), 1);
+        const f = frac * (stops.length - 1);
         const i = Math.min(Math.floor(f), stops.length - 2), t = f - i;
         const c = stops[i].map((v, k) => Math.round(v + (stops[i + 1][k] - v) * t));
         document.documentElement.style.setProperty('--year-colour', `rgb(${c.join(',')})`);
+        document.documentElement.style.setProperty('--year-frac', Math.max(frac, 0.001));
         return String(year);
     }""",
     Output("year_label", "children"), Input("year_slider", "value"), State("map_config", "data"),
