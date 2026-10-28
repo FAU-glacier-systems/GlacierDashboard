@@ -96,7 +96,7 @@ TEXTS = {
         "thickness": "Eisdicke", "compass": "Ziehen, um die Karte zu drehen; klicken für Norden und flach, erneut klicken für zurück",
     },
 }
-BROWSER_TEXTS = ("more", "none", "peak", "peak_tip", "update", "reload", "in", "of", "gone",
+BROWSER_TEXTS = ("more", "none", "peak", "peak_tip", "update", "reload", "title_tip", "in", "of", "gone",
                  "decimal", "thickness", "theme", "play", "pause", "compass", "area_tip")
 
 # [rgi, name] of all glaciers, named ones first (alphabetically), then the unnamed ones by RGI ID
@@ -201,9 +201,11 @@ def make_page(app, lang):
                         ]),
                     ]),
                 ]),
-                # the title, plain text on the map below the panel
-                html.H1(className="map-title", title=T["title_tip"], children=[
-                    T["title"], html.Span(str(config.DEFAULT_YEAR), id="year_label", className="year-label")]),
+                # the title, plain text on the map below the panel; a button inside the heading (keyboard, screen
+                # readers) that goes back to all glaciers (map3d.js), as does the home button under the compass
+                html.H1(className="map-title", children=html.Button(
+                    className="map-title-btn", title=T["title_tip"], children=[
+                        T["title"], html.Span(str(config.DEFAULT_YEAR), id="year_label", className="year-label")])),
             ]),
 
             # theme switch; hidden, map3d.js shows it as a map control under the zoom buttons

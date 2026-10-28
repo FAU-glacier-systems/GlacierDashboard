@@ -29,6 +29,22 @@
 }
 .map-title .year-label { font-size: 32px; margin-left: 2px; }
 .map-title { cursor: pointer; }                           /* click: back to the whole Alps (map3d.js) */
+/* the title is a button: no button look, but a pill on hover and a ring for the keyboard */
+.map-title-btn {
+  font: inherit; color: inherit; text-shadow: inherit; background: transparent; border: 1px solid transparent;
+  border-radius: 10px; padding: 2px 10px 4px 8px; margin: -3px -11px -5px -9px; cursor: pointer;
+  display: inline-flex; align-items: center; transition: background-color 0.15s, border-color 0.15s;
+}
+.map-title-btn:focus { outline: none; }
+.map-title-btn:focus-visible { border-color: var(--accent); background: color-mix(in srgb, var(--bg) 55%, transparent); }
+@media (hover: hover) {
+  .map-title-btn:hover { background: color-mix(in srgb, var(--bg) 55%, transparent); border-color: var(--line); }
+}
+/* the home button under the compass (map3d.js): shown while there is a way back (map3d.js sets data-away on <html>);
+   a house in MapLibre's icon style, so the dark theme inverts it like the compass */
+.maplibregl-ctrl.home-ctrl { display: none; }
+html[data-away] .maplibregl-ctrl.home-ctrl { display: block; }
+.home-ctrl .maplibregl-ctrl-icon { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 11.5 12 4l9 7.5'/%3E%3Cpath d='M5.5 9.5V20h13V9.5'/%3E%3Cpath d='M10 20v-5.5h4V20'/%3E%3C/svg%3E") center / 17px no-repeat; }
 .title-card {
   width: 340px; max-width: 100%;
   display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;   /* grows; its menus lie over the map */

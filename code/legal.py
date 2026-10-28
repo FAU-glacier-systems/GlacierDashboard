@@ -178,7 +178,7 @@ Diese Erklärung gilt für <a href="/">www.glacier-evolution.nat.fau.de</a>.</p>
 </ul>
 <p>Mit der Tastatur bedienbar sind: die Suche nach Gletschern und Gipfeln (Pfeiltasten und Eingabetaste), die
 Auswahl der dargestellten Größe und des Szenarios, der Jahresregler, das Abspielen der Jahre, die Umschaltung
-hell/dunkel.
+hell/dunkel und der Titel (zurück zu allen Gletschern).
 Die Fläche der Auswahl im gewählten Jahr steht als Text neben dem Szenario.</p>
 <p>Die Darstellung dreidimensionaler Modelldaten lässt sich nicht gleichwertig in Textform wiedergeben.
 Die zugrunde liegenden Daten stellen wir auf Anfrage in tabellarischer Form zur Verfügung.</p>
@@ -298,7 +298,8 @@ with Art. 13 BayBGG, Art. 1 BayBITV and Directive (EU) 2016/2102. This statement
 <li>Content in Easy Language and sign language is not offered.</li>
 </ul>
 <p>Usable with the keyboard: the search for glaciers and peaks (arrow keys and Enter), the choice of the
-property shown and of the scenario, the year slider, playing the years and the light/dark switch. The area of
+property shown and of the scenario, the year slider, playing the years, the light/dark switch and the title
+(back to all glaciers). The area of
 the selection in the chosen year is shown as text next to the scenario.</p>
 <p>Three-dimensional model data cannot be rendered equivalently as text. We provide the underlying data in
 tabular form on request.</p>
@@ -325,6 +326,8 @@ TEMPLATE = """<!DOCTYPE html>
 <title>{title} · Glacier Dashboard</title>
 <script>try{{var t=JSON.parse(localStorage.getItem("theme"));if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}}catch(e){{}}</script>
 <link rel="icon" type="image/x-icon" href="/assets/favicon.ico">
+<link rel="icon" type="image/png" sizes="512x512" href="/assets/icon-512.png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 <link rel="stylesheet" href="{css}">
 </head>
 <body class="legal-page">

@@ -3,9 +3,12 @@ peak list for the search."""
 import gzip
 import hashlib
 import json
+import os
+import time
 
 import numpy as np
 from flask import Blueprint, Response, abort, request, send_from_directory
+from werkzeug.security import safe_join
 
 from . import config
 
@@ -37,6 +40,7 @@ _h = hashlib.sha1(_PEAKS)
 for _f in sorted(p for p in config.CODE_DIR.rglob("*") if p.suffix in (".py", ".js", ".css") and p.is_file()):
     _h.update(str(_f.relative_to(config.CODE_DIR)).encode() + _f.read_bytes())
 BUILD = _h.hexdigest()[:12]
+STARTED = time.time()
 
 
 def _ids_arg():
@@ -61,8 +65,11 @@ def _binary(chunks):
 
 @bp.route("/static3d/<path:name>")
 def static3d(name):
-    # fixed per URL: MapLibre's path holds its version, our files are asked for with the build (?v=)
-    fixed = name.startswith("vendor/") or request.args.get("v") == BUILD
+    # fixed per URL: MapLibre's path holds its version, our files are asked for with the build (?v=). A file
+    # changed since this process started is not what that build was made from: browsers keep it a minute only.
+    path = safe_join(str(ASSETS3D_DIR), name)                 # None for a path leaving the folder
+    fixed = name.startswith("vendor/") or (request.args.get("v") == BUILD and path is not None
+                                            and os.path.isfile(path) and os.path.getmtime(path) < STARTED)
     return send_from_directory(ASSETS3D_DIR, name, max_age=31536000 if fixed else 60)
 
 

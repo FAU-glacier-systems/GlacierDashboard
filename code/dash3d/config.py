@@ -103,6 +103,8 @@ INDEX_STRING = """<!DOCTYPE html>
 <title>{%title%}</title>
 <script>try{var t=JSON.parse(localStorage.getItem("theme"));if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}</script>
 {%favicon%}
+<link rel="icon" type="image/png" sizes="512x512" href="/assets/icon-512.png">
+<link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
 {%css%}
 </head>
 <body>

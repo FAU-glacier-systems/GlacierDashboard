@@ -345,7 +345,7 @@
         if (G && G.s === s) applyFrame(G, thk, prop, st.variable);
       }
       S.frameShown = url;
-      if (S.hover) showHover();             // the label follows the shown year
+      if (S.hover) showHover();            // the label follows the shown year
       S.map.triggerRepaint();
       if (st.playing) {                       // read ahead: the next year of the same glaciers
         const next = st.year >= S.cfg.years[1] ? S.cfg.years[0] : st.year + 1;
@@ -433,6 +433,7 @@
     window._map3d = map;   // handy for debugging in the console
     map.addControl(themeControl(), "top-right");   // above the zoom buttons
     map.addControl(new maplibregl.NavigationControl({ showZoom: false, visualizePitch: true }), "top-right");   // compass only
+    map.addControl(homeControl(), "top-right");     // under the compass
     compassToggle(map);
     trackPanelHeight();
 
@@ -471,6 +472,8 @@
       map.on("moveend", () => { if (!S.flight) rested(); });   // a peak flight calls it when it ends
 
       S.loaded = true;
+      const ov = map.cameraForBounds(cfg.alps_bounds, { padding: 30 });
+      S.overviewZoom = ov ? ov.zoom : null;
       if (map.getZoom() >= PEAK_ZOOM) loadPeaks();   // a link opens close in without moving: labels anyway
       map.once("idle", updatePeakLabels);      // the city labels, before any move
       showIntro();
@@ -564,6 +567,27 @@
 
   // light/dark switch as a map control above the zoom buttons; it presses the (hidden) Dash button, which owns
   // the theme
+  // the home button under the compass, as a map control like it: back to all glaciers (goHome); shown only while
+  // there is a way back (html[data-away], updateHome)
+  function homeControl() {
+    let box;
+    return {
+      onAdd() {
+        box = document.createElement("div");
+        box.className = "maplibregl-ctrl maplibregl-ctrl-group home-ctrl";
+        const btn = document.createElement("button");
+        btn.type = "button";      // the text from the page; a page built before it existed: by language
+        btn.title = S.cfg.t.title_tip || (S.cfg.lang === "de" ? "Zurück zu allen Gletschern" : "Back to all glaciers");
+        btn.setAttribute("aria-label", btn.title);
+        btn.innerHTML = '<span class="maplibregl-ctrl-icon" aria-hidden="true"></span>';
+        btn.addEventListener("click", () => { if (S.loaded) goHome(); });
+        box.appendChild(btn);
+        return box;
+      },
+      onRemove() { box.remove(); },
+    };
+  }
+
   function themeControl() {
     let box;
     return {
@@ -635,6 +659,7 @@
   // after the camera came to rest: glaciers in view, address, labels. MapLibre places a label on the terrain
   // loaded at that moment and moves it only with the map, so once the finer terrain is in, they are placed again.
   function rested() {
+    updateHome();
     sync(); viewToUrl();
     if (S.map.getZoom() >= PEAK_ZOOM) loadPeaks();
     updatePeakLabels();
@@ -642,6 +667,12 @@
       for (const m of [...(S.peakMarkers || new Map()).values(), ...(S.cityMarkers || new Map()).values()])
         m.setLngLat(m.getLngLat());
     });
+  }
+
+  // the home icon at the title, while there is a way back: a glacier selected, or closer in than the whole Alps
+  function updateHome() {
+    const away = !!S.rgi || (S.overviewZoom != null && S.map.getZoom() > S.overviewZoom + 0.5);
+    if (away) document.documentElement.dataset.away = ""; else delete document.documentElement.dataset.away;
   }
 
   function flyToGlacier(rgi, duration) {
@@ -659,27 +690,72 @@
   // further out than PEAK_FLY_ZOOM; the search field goes back to the selected glacier. The flight moves the camera
   // itself, frame by frame, with the summit's height from the peak list (tools/build_peaks.py): MapLibre's flyTo
   // takes the height of the destination from the terrain loaded there, and if those tiles arrive only after the
-  // flight it stays at 0 m and the camera ends far above and behind the mountain. A pointer, wheel or key stops it.
-  const PEAK_FLY_ZOOM = 12.5, M_PER_DEG = 111320;
+  // flight it stays at 0 m and the camera ends far above and behind the mountain. Its path and timing are those of
+  // flyTo (van Wijk & Nuij: out and back in so the motion on screen stays even, MapLibre's easing, 2.5 s as for a
+  // glacier), so both kinds of flight look alike. A pointer, wheel or key stops it.
+  const PEAK_FLY_ZOOM = 12.5, FLY_CURVE = 1.42, FLY_MS = 2500;
+  // MapLibre's default easing, cubic-bezier(0.25, 0.1, 0.25, 1)
+  const flyEase = (x) => {
+    const bez = (t, p1, p2) => 3 * (1 - t) * (1 - t) * t * p1 + 3 * (1 - t) * t * t * p2 + t * t * t;
+    let t = x;
+    for (let i = 0; i < 8; i++) {                               // Newton steps for the t with bez_x(t) = x
+      const dx = 0.75 * (1 - t) * (1 - t) + 2.25 * t * t;        // d bez_x / dt
+      t = Math.min(Math.max(t - (bez(t, 0.25, 0.25) - x) / Math.max(dx, 1e-6), 0), 1);
+    }
+    return bez(t, 0.1, 1);
+  };
+  // put the map's centre where the line of sight from the camera meets the terrain, the camera staying exactly where
+  // it is (MapLibre's flyTo ends with the centre at 0 m when the destination's terrain loaded late)
+  function centreOnGround() {
+    const m = S.map, t = m.transform, c = t.getCameraLngLat(), lat = m.getCenter().lat;
+    const perM = t.worldSize / (40075016.686 * Math.cos(lat * Math.PI / 180));
+    const P = m.getPitch() * Math.PI / 180, B = m.getBearing() * Math.PI / 180;
+    const alt = t.elevation + t.cameraToCenterDistance * Math.cos(P) / perM, far = t.cameraToCenterDistance / perM;
+    const at = (D) => [c.lng + D * Math.sin(P) * Math.sin(B) / (111320 * Math.cos(c.lat * Math.PI / 180)),
+                       c.lat + D * Math.sin(P) * Math.cos(B) / 111320, alt - D * Math.cos(P)];
+    const below = (D) => { const q = at(D), g = m.queryTerrainElevation([q[0], q[1]]); return g != null && q[2] <= g; };
+    let lo = 0, hi = null;
+    for (let i = 1; i <= 200 && hi === null; i++) { const D = far * i / 200; if (below(D)) hi = D; else lo = D; }
+    if (hi === null) return;                                   // no terrain there yet: leave it
+    for (let i = 0; i < 12; i++) { const mid = (lo + hi) / 2; if (below(mid)) hi = mid; else lo = mid; }
+    const q = at(hi);
+    if (Math.abs(q[2] - t.elevation) < 1) return;
+    const o = m.calculateCameraOptionsFromTo(c, alt, new maplibregl.LngLat(q[0], q[1]), q[2]);
+    m.jumpTo({ center: o.center, zoom: o.zoom, bearing: o.bearing, pitch: o.pitch, elevation: o.elevation });
+  }
+
   function flyToPeak(id) {
     const p = (S.peaks || []).find((e) => e[0] === id);
     if (!p || !S.map) return;
-    const map = S.map, c = map.getCenter();
-    const a = { lng: c.lng, lat: c.lat, zoom: map.getZoom(), h: map.transform.elevation };
-    const b = { lng: p[4][0], lat: p[4][1], zoom: Math.max(a.zoom, PEAK_FLY_ZOOM), h: p[4][2] };
-    const km = Math.hypot((b.lng - a.lng) * Math.cos(b.lat * Math.PI / 180), b.lat - a.lat) * M_PER_DEG / 1000;
-    const hop = Math.min(Math.log2(1 + km / 10), 3);                   // out and back in on longer flights
-    const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const duration = reduced ? 0 : Math.min(1500 + km * 30, 4000), t0 = performance.now();
-    const ease = (k) => k < 0.5 ? 4 * k * k * k : 1 - (-2 * k + 2) ** 3 / 2;
+    const map = S.map, tr = map.transform;
     stopPeakFlight();
     map.stop();
+    centreOnGround();           // MapLibre's own flights can leave the centre at 0 m: from there it would rise km
+    const z0 = map.getZoom(), z1 = Math.max(z0, PEAK_FLY_ZOOM), h0 = tr.elevation, h1 = p[4][2];
+    const from = maplibregl.MercatorCoordinate.fromLngLat(map.getCenter());
+    const to = maplibregl.MercatorCoordinate.fromLngLat([p[4][0], p[4][1]]);
+    // the flight path: w = visible width relative to the start, u = share of the way, both over the path length S
+    const rho = FLY_CURVE, rho2 = rho * rho, w0 = Math.max(map.getCanvas().clientWidth, map.getCanvas().clientHeight);
+    const w1 = w0 / 2 ** (z1 - z0), u1 = Math.hypot(to.x - from.x, to.y - from.y) * 512 * 2 ** z0;
+    const r = (i) => { const q = (w1 * w1 - w0 * w0 + (i ? -1 : 1) * rho2 * rho2 * u1 * u1) / (2 * (i ? w1 : w0) * rho2 * u1);
+                       return Math.log(Math.sqrt(q * q + 1) - q); };
+    const r0 = r(0);
+    let S_ = (r(1) - r0) / rho, w = (s) => Math.cosh(r0) / Math.cosh(r0 + rho * s);
+    let u = (s) => w0 * ((Math.cosh(r0) * Math.tanh(r0 + rho * s) - Math.sinh(r0)) / rho2) / u1;
+    if (Math.abs(u1) < 2e-6 || !isFinite(S_)) {                   // (almost) there already: only the zoom changes
+      const dir = w1 < w0 ? -1 : 1;
+      S_ = Math.abs(Math.log(w1 / w0)) / rho; u = () => 1; w = (s) => Math.exp(dir * rho * s);
+    }
+    // always flown, also with "reduce motion" set, like the glacier flights (essential: true): the flight shows
+    // where the peak lies
+    const duration = FLY_MS, t0 = performance.now();
     map.setCenterClampedToGround(false);    // the centre at the summit's height, not where the terrain has loaded
     S.flight = {};
     const step = () => {
-      const k = duration ? Math.min((performance.now() - t0) / duration, 1) : 1, e = ease(k);
-      map.jumpTo({ center: [a.lng + (b.lng - a.lng) * e, a.lat + (b.lat - a.lat) * e],
-                   zoom: a.zoom + (b.zoom - a.zoom) * e - hop * Math.sin(Math.PI * e), elevation: a.h + (b.h - a.h) * e });
+      const k = duration ? Math.min((performance.now() - t0) / duration, 1) : 1, e = flyEase(k), s = e * S_;
+      const f = k < 1 ? u(s) : 1, zoom = k < 1 ? z0 + Math.log2(1 / w(s)) : z1;
+      const c = new maplibregl.MercatorCoordinate(from.x + (to.x - from.x) * f, from.y + (to.y - from.y) * f).toLngLat();
+      map.jumpTo({ center: c, zoom, elevation: h0 + (h1 - h0) * e });
       if (k < 1) { S.flight.frame = requestAnimationFrame(step); return; }
       stopPeakFlight();
       rested();
@@ -811,22 +887,24 @@
     } else if (newGlacier && st.rgi) flyToGlacier(st.rgi, S.firstFlyDone ? 2500 : 3500);
     else if (newGlacier) flyToOverview();      // selection cleared: back to all glaciers
     S.firstFlyDone = true;
+    updateHome();
     sync();
   }
 
   // ways back after moving the camera: a click on the search field while it shows the selected glacier returns to
-  // that glacier's view; a click on the title clears the selection (the × button; apply() then flies to the whole
-  // Alps), or with nothing selected just flies there
+  // that glacier's view; a click on the title or the home button (goHome) clears the selection (the × button;
+  // apply() then flies to the whole Alps), or with nothing selected just flies there
+  function goHome() {
+    const clear = document.getElementById("glacier_clear");
+    if (S.rgi && clear) clear.click();
+    else flyToOverview();
+  }
   document.addEventListener("click", (e) => {
     if (!S.loaded || !e.target.closest) return;
     const box = e.target.closest(".glacier-search");
     const onField = box && box.classList.contains("has-sel") && e.target.closest(".gs-input");
     if (onField && S.rgi) flyToGlacier(S.rgi, 1500);
-    else if (e.target.closest(".map-title")) {
-      const clear = document.getElementById("glacier_clear");
-      if (S.rgi && clear) clear.click();
-      else flyToOverview();
-    }
+    else if (e.target.closest(".map-title")) goHome();
   });
 
   // the colour bar is a div acting as a button: Enter and Space press it, as for a real button
