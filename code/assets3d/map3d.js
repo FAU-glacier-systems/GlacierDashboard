@@ -21,6 +21,7 @@
   };
   const origin = () => window.location.origin;
   const MAX_PITCH = 80;
+  const DEFAULT_RGI = "RGI2000-v7.0-G-11-02596";     // Great Aletsch, for a page built before cfg.default_rgi
   const LIGHT = normalize([-0.55, -0.55, 0.65]);   // (east, north, up): the sun in the south-west, about 40° high
   // The terrain under the ice is a raster resampled from the model bedrock; the coarser the terrain tiles (the
   // further away), the more it smooths narrow valleys upwards. Lift the ice by about a tenth of the terrain
@@ -521,6 +522,7 @@
     map.addControl(themeControl(), "top-right");   // above the zoom buttons
     map.addControl(new maplibregl.NavigationControl({ showZoom: false, visualizePitch: true }), "top-right");   // compass only
     map.addControl(homeControl(), "top-right");     // under the compass
+    updateHome();
     compassToggle(map);
     trackPanelHeight();
 
@@ -656,20 +658,23 @@
 
   // light/dark switch as a map control above the zoom buttons; it presses the (hidden) Dash button, which owns
   // the theme
-  // the home button under the compass, as a map control like it: back to all glaciers (goHome); shown only while
-  // there is a way back (html[data-away], updateHome)
+  // the button under the compass, as a map control like it: while there is a way back (html[data-away],
+  // updateHome) a house, back to all glaciers (goHome); in the overview a snowflake that selects the default
+  // glacier (Great Aletsch, the view on page load)
   function homeControl() {
     let box;
     return {
       onAdd() {
         box = document.createElement("div");
         box.className = "maplibregl-ctrl maplibregl-ctrl-group home-ctrl";
-        const btn = document.createElement("button");
-        btn.type = "button";      // the text from the page; a page built before it existed: by language
-        btn.title = S.cfg.t.title_tip || (S.cfg.lang === "de" ? "Zurück zu allen Gletschern" : "Back to all glaciers");
-        btn.setAttribute("aria-label", btn.title);
+        const btn = S.homeBtn = document.createElement("button");
+        btn.type = "button";
         btn.innerHTML = '<span class="maplibregl-ctrl-icon" aria-hidden="true"></span>';
-        btn.addEventListener("click", () => { if (S.loaded) goHome(); });
+        btn.addEventListener("click", () => {
+          if (!S.loaded) return;
+          if (document.documentElement.dataset.away != null) goHome();
+          else window.dash_clientside.set_props("rgi_select", { data: { rgi: S.cfg.default_rgi || DEFAULT_RGI, t: Date.now() } });
+        });
         box.appendChild(btn);
         return box;
       },
@@ -766,6 +771,12 @@
   function updateHome() {
     const away = !!S.rgi || (S.overviewZoom != null && S.map.getZoom() > S.overviewZoom + 0.5);
     if (away) document.documentElement.dataset.away = ""; else delete document.documentElement.dataset.away;
+    if (S.homeBtn) {     // the texts from the page; a page built before they existed: by language
+      const de = S.cfg.lang === "de";
+      S.homeBtn.title = away ? S.cfg.t.title_tip || (de ? "Zurück zu allen Gletschern" : "Back to all glaciers")
+        : S.cfg.t.default_tip || (de ? "Zum Großen Aletschgletscher" : "To the Great Aletsch Glacier");
+      S.homeBtn.setAttribute("aria-label", S.homeBtn.title);
+    }
   }
 
   function flyToGlacier(rgi, duration) {

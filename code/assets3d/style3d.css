@@ -40,11 +40,11 @@
 @media (hover: hover) {
   .map-title-btn:hover { background: color-mix(in srgb, var(--bg) 55%, transparent); border-color: var(--line); }
 }
-/* the home button under the compass (map3d.js): shown while there is a way back (map3d.js sets data-away on <html>);
-   a house in MapLibre's icon style, so the dark theme inverts it like the compass */
-.maplibregl-ctrl.home-ctrl { display: none; }
-html[data-away] .maplibregl-ctrl.home-ctrl { display: block; }
-.home-ctrl .maplibregl-ctrl-icon { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 11.5 12 4l9 7.5'/%3E%3Cpath d='M5.5 9.5V20h13V9.5'/%3E%3Cpath d='M10 20v-5.5h4V20'/%3E%3C/svg%3E") center / 17px no-repeat; }
+/* the button under the compass (map3d.js): a house while there is a way back to all glaciers (map3d.js sets
+   data-away on <html>), in the overview a snowflake that flies to the default glacier; in MapLibre's icon style, so
+   the dark theme inverts it like the compass */
+.home-ctrl .maplibregl-ctrl-icon { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round'%3E%3Cpath d='M12.0 22.0L12.0 2.0M12.0 5.6l-2.3-2.3M12.0 5.6l2.3-2.3M20.7 17.0L3.3 7.0M6.5 8.8l-3.1 0.8M6.5 8.8l-0.8-3.1M20.7 7.0L3.3 17.0M6.5 15.2l-0.8 3.1M6.5 15.2l-3.1-0.8M12.0 18.4l2.3 2.3M12.0 18.4l-2.3 2.3M17.5 15.2l3.1-0.8M17.5 15.2l0.8 3.1M17.5 8.8l0.8-3.1M17.5 8.8l3.1 0.8'/%3E%3C/svg%3E") center / 17px no-repeat; }
+html[data-away] .home-ctrl .maplibregl-ctrl-icon { background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 11.5 12 4l9 7.5'/%3E%3Cpath d='M5.5 9.5V20h13V9.5'/%3E%3Cpath d='M10 20v-5.5h4V20'/%3E%3C/svg%3E") center / 17px no-repeat; }
 .title-card {
   width: 340px; max-width: 100%;
   display: flex; flex-direction: column; gap: 8px; padding: 10px 12px;   /* grows; its menus lie over the map */
@@ -270,7 +270,7 @@ html[data-theme="dark"] .maplibregl-ctrl-group .maplibregl-ctrl-icon { filter: i
 @media (pointer: coarse) {
   .app3d .maplibregl-ctrl-group button { width: 40px; height: 40px; }
   .theme-ctrl button { font-size: 18px; }
-  .home-ctrl .maplibregl-ctrl-icon { background-size: 21px; }
+  html .app3d .home-ctrl .maplibregl-ctrl-icon { background-size: 21px; }   /* outranks html[data-away] */
 }
 
 /* Phones: full-width top panel with the map buttons below it; icon-only play, scenario without its volume */

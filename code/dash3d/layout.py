@@ -52,7 +52,7 @@ TEXTS = {
         "cbar_title": "Click to choose what the colours show",
         "search": "Search glaciers and peaks…",
         "show_all": "Show all glaciers",
-        "title": "Alpine glaciers in ", "title_tip": "Back to all glaciers",
+        "title": "Alpine glaciers in ", "title_tip": "Back to all glaciers", "default_tip": "To the Great Aletsch Glacier",
         "theme": "Switch light/dark theme",
         "intro_head": f"{N} Alpine glaciers, modelled from 2000 to 2100",
         "intro": " under three greenhouse gas scenarios. Press ▶ to watch them change. Click a glacier or search "
@@ -76,7 +76,7 @@ TEXTS = {
         "cbar_title": "Klicken, um zu wählen, was die Farben zeigen",
         "search": "Gletscher und Gipfel suchen…",
         "show_all": "Alle Gletscher zeigen",
-        "title": "Alpengletscher ", "title_tip": "Zurück zu allen Gletschern",
+        "title": "Alpengletscher ", "title_tip": "Zurück zu allen Gletschern", "default_tip": "Zum Großen Aletschgletscher",
         "theme": "Hell/dunkel umschalten",
         "intro_head": f"{N} Alpengletscher, modelliert von 2000 bis 2100",
         "intro": " unter drei Treibhausgas-Szenarien. Drücken Sie ▶, um ihre Entwicklung zu sehen. Klicken Sie auf "
@@ -96,7 +96,7 @@ TEXTS = {
         "thickness": "Eisdicke", "compass": "Ziehen, um die Karte zu drehen; klicken für Norden und flach, erneut klicken für zurück",
     },
 }
-BROWSER_TEXTS = ("largest", "none", "peak", "glacier", "peak_tip", "update", "reload", "title_tip", "no_webgl", "in", "of", "gone",
+BROWSER_TEXTS = ("largest", "none", "peak", "glacier", "peak_tip", "update", "reload", "title_tip", "default_tip", "no_webgl", "in", "of", "gone",
                  "decimal", "thickness", "theme", "play", "pause", "compass", "area_tip")
 
 # [rgi, name] of all glaciers, named ones first (alphabetically), then the unnamed ones by RGI ID
@@ -123,6 +123,7 @@ _MAP_CONFIG = {
     "scenario_labels": config.SCENARIO_LABELS,
     "search": SEARCH_LIST,
     "largest": LARGEST,
+    "default_rgi": config.DEFAULT_RGI,  # the glacier on page load; the button under the compass flies there
     "version": BUILD,                  # map3d.js offers a reload when the server's differs (api.py)
     "peaks_url": PEAKS_URL if config.PEAKS else None,   # loaded when the search is first used (map3d.js)
     "years": [config.YEARS[0], config.YEARS[-1]],
