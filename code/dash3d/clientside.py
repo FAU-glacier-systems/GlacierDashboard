@@ -193,9 +193,20 @@ clientside_callback(
     prevent_initial_call=True,
 )
 
+# the year in the title; the slider's dot takes the year's colour on the climate-stripes ramp (the stops of the
+# slider track in style3d.css)
 clientside_callback(
-    "function(year) { return year == null ? window.dash_clientside.no_update : String(year); }",
-    Output("year_label", "children"), Input("year_slider", "value"),
+    """function(year, cfg) {
+        if (year == null) return window.dash_clientside.no_update;
+        const stops = ['#08306b', '#2171b5', '#6baed6', '#deebf7', '#fcbba1', '#fb6a4a', '#cb181d', '#67000d']
+            .map(h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)));
+        const f = Math.min(Math.max((year - cfg.years[0]) / (cfg.years[1] - cfg.years[0]), 0), 1) * (stops.length - 1);
+        const i = Math.min(Math.floor(f), stops.length - 2), t = f - i;
+        const c = stops[i].map((v, k) => Math.round(v + (stops[i + 1][k] - v) * t));
+        document.documentElement.style.setProperty('--year-colour', `rgb(${c.join(',')})`);
+        return String(year);
+    }""",
+    Output("year_label", "children"), Input("year_slider", "value"), State("map_config", "data"),
 )
 
 # the scenario switch and its menu: the selection's area in the displayed year (the share of 2000 in the tooltip)

@@ -972,7 +972,8 @@
   function flyToOverview() {
     stopPeakFlight();
     const cam = S.map.cameraForBounds(S.cfg.alps_bounds, { padding: 30 });
-    if (cam) S.map.flyTo({ center: cam.center, zoom: cam.zoom, pitch: 0, bearing: 0, duration: 2000 });
+    // essential: also flown with "reduce motion" set, like the glacier flights (otherwise MapLibre jumps)
+    if (cam) S.map.flyTo({ center: cam.center, zoom: cam.zoom, pitch: 0, bearing: 0, duration: 2000, essential: true });
   }
 
   function apply() {
@@ -989,26 +990,26 @@
       // server (null first), so the link's view only ends once the link's glacier has arrived.
       if (st.rgi || urlGlacier() === null) S.urlView = null;
     } else if (newGlacier && st.rgi) flyToGlacier(st.rgi, S.firstFlyDone ? 2500 : 3500);
-    else if (newGlacier) flyToOverview();      // selection cleared: back to all glaciers
+    else if (newGlacier && !S.homeFlight) flyToOverview();      // selection cleared: back to all glaciers
+    if (newGlacier) S.homeFlight = false;
     S.firstFlyDone = true;
     updateHome();
     sync();
   }
 
   // ways back after moving the camera: a click on the search field while it shows the selected glacier returns to
-  // that glacier's view; a click on the title or the home button (goHome) clears the selection (the × button;
-  // apply() then flies to the whole Alps), or with nothing selected just flies there
+  // that glacier's view; the home button (goHome) flies to the whole Alps at once and clears the selection (the
+  // × button), without apply() starting the flight again when the cleared selection arrives
   function goHome() {
     const clear = document.getElementById("glacier_clear");
-    if (S.rgi && clear) clear.click();
-    else flyToOverview();
+    flyToOverview();
+    if (S.rgi && clear) { S.homeFlight = true; clear.click(); }
   }
   document.addEventListener("click", (e) => {
     if (!S.loaded || !e.target.closest) return;
     const box = e.target.closest(".glacier-search");
     const onField = box && box.classList.contains("has-sel") && e.target.closest(".gs-input");
     if (onField && S.rgi) flyToGlacier(S.rgi, 1500);
-    else if (e.target.closest(".map-title")) goHome();
   });
 
   // the colour bar is a div acting as a button: Enter and Space press it, as for a real button

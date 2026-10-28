@@ -201,11 +201,9 @@ def make_page(app, lang):
                         html.Div(id="glacier_results", className="gs-results is-empty", role="listbox"),
                     ]),
                 ]),
-                # the title, plain text on the map below the panel; a button inside the heading (keyboard, screen
-                # readers) that goes back to all glaciers (map3d.js), as does the home button under the compass
-                html.H1(className="map-title", children=html.Button(
-                    className="map-title-btn", title=T["title_tip"], children=[
-                        T["title"], html.Span(str(config.DEFAULT_YEAR), id="year_label", className="year-label")])),
+                # the title, plain text on the map below the panel
+                html.H1(className="map-title", children=[
+                    T["title"], html.Span(str(config.DEFAULT_YEAR), id="year_label", className="year-label")]),
             ]),
 
             # theme switch; hidden, map3d.js shows it as a map control under the zoom buttons
