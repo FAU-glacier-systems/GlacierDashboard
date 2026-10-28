@@ -29,6 +29,11 @@
 }
 .map-title .year-label { font-size: 32px; margin-left: 2px; }
 .map-title { display: flex; align-items: center; pointer-events: none; }   /* plain text: clicks reach the map */
+/* "preliminary model results" under the title; hovering it gives the reason */
+.prelim-note {
+  margin-top: -6px; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; color: var(--fg); opacity: 0.85;
+  text-shadow: 0 0 2px var(--bg), 0 0 6px var(--bg); cursor: help;
+}
 .map-title-btn { font: inherit; color: inherit; text-shadow: inherit; background: none; border: 0; padding: 0; }   /* pages from before */
 /* the button under the compass (map3d.js): a house while there is a way back to all glaciers (map3d.js sets
    data-away on <html>), in the overview a snowflake that flies to the default glacier; in MapLibre's icon style, so
@@ -279,6 +284,7 @@ html[data-theme="dark"] .maplibregl-ctrl-group .maplibregl-ctrl-icon { filter: i
 @media (max-width: 640px) {
   .top-stack { top: 6px; left: 8px; right: 8px; align-items: stretch; }
   .map-title { align-self: center; }
+  .prelim-note { align-self: center; font-size: 10px; }
   .title-card { width: auto; }
   /* the map buttons move below the full-width panel (map3d.js keeps --panel-bottom up to date) */
   .app3d .maplibregl-ctrl-top-right { top: calc(var(--panel-bottom, 150px) - 2px); }

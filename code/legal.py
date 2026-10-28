@@ -97,6 +97,8 @@ Hochschulinnovationsgesetzes (BayHIG) eine staatliche Einrichtung und zugleich e
 {_contact("de")}
 
 <h2 id="quellen">Daten und Quellen</h2>
+<p>Die Modellergebnisse sind vorläufig: Sie stammen aus laufender Forschung und können sich ändern, wenn das Modell
+und seine Eingangsdaten verbessert werden.</p>
 <p>Gletscherumrisse: {_RGI} ({_CC_BY}).</p>
 <p>Geländemodell: {_TERRAIN} aus SRTM, GMTED2010, ETOPO1 und EU-DEM, ergänzt um das Gletscherbett aus den
 Modellrechnungen. Enthält: {_TERRAIN_CREDIT} ({_CC_BY}). {_TERRAIN_ALL}Vollständige Quellenangaben</a>.</p>
@@ -221,6 +223,8 @@ President, Prof. Dr. Joachim Hornegger.</p>
 {_contact("en")}
 
 <h2 id="sources">Data and sources</h2>
+<p>The model results are preliminary: they come from ongoing research and may change as the model and its input
+data are improved.</p>
 <p>Glacier outlines: {_RGI} ({_CC_BY}).</p>
 <p>Terrain: {_TERRAIN} from SRTM, GMTED2010, ETOPO1 and EU-DEM, with the glacier bed from the model runs
 merged in. Contains: {_TERRAIN_CREDIT} ({_CC_BY}). {_TERRAIN_ALL}Full attribution</a>.</p>

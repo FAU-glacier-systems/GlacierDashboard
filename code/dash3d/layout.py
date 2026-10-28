@@ -57,8 +57,12 @@ TEXTS = {
         "intro_head": f"{N} Alpine glaciers, modelled from 2000 to 2100",
         "intro": " under three greenhouse gas scenarios. Press ▶ to watch them change; the scenario button shows "
                  "how much warmer the Alps get. Click a glacier or search for one (top) to fly there; click the colour "
-                 "bar to show flow speed, mass balance or temperature.",
+                 "bar to show flow speed, mass balance or temperature. The model results are preliminary and may "
+                 "still change.",
         "intro_ok": "Got it",
+        "prelim": "Preliminary model results",
+        "prelim_tip": "Preliminary results of ongoing research: they may change as the model and its input data "
+                      "are improved",
         "scenario": "RCP scenario", "scenario_tip": "Click to choose the greenhouse gas scenario",
         "play": " Play", "pause": " Pause", "play_tip": "Play or pause the years",
         "funded": "Funded by the European Union · European Research Council",
@@ -84,8 +88,11 @@ TEXTS = {
         "intro": " unter drei Treibhausgas-Szenarien. Drücken Sie ▶, um ihre Entwicklung zu sehen; die Szenario-Taste "
                  "zeigt, wie viel wärmer die Alpen werden. Klicken Sie auf einen Gletscher oder suchen Sie ihn (oben), "
                  "um dorthin zu fliegen; klicken Sie auf die Farbskala, um Fließgeschwindigkeit, Massenbilanz oder "
-                 "Temperatur zu zeigen.",
+                 "Temperatur zu zeigen. Die Modellergebnisse sind vorläufig und können sich noch ändern.",
         "intro_ok": "Verstanden",
+        "prelim": "Vorläufige Modellergebnisse",
+        "prelim_tip": "Vorläufige Ergebnisse laufender Forschung: Sie können sich ändern, wenn das Modell und seine "
+                      "Eingangsdaten verbessert werden",
         "scenario": "RCP-Szenario", "scenario_tip": "Klicken, um das Treibhausgas-Szenario zu wählen",
         "play": " Start", "pause": " Pause", "play_tip": "Jahre abspielen oder anhalten",
         "funded": "Gefördert von der Europäischen Union · Europäischer Forschungsrat",
@@ -216,6 +223,8 @@ def make_page(app, lang):
                 # the title, plain text on the map below the panel
                 html.H1(className="map-title", children=[
                     T["title"], html.Span(str(config.DEFAULT_YEAR), id="year_label", className="year-label")]),
+                # always visible: the results are not final
+                html.Div(T["prelim"], className="prelim-note", title=T["prelim_tip"]),
             ]),
 
             # theme switch; hidden, map3d.js shows it as a map control under the zoom buttons
