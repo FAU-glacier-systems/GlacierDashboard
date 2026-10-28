@@ -242,20 +242,36 @@
   // surface, normal, colour value and ice edge per vertex for one year
   function applyFrame(G, thk, prop, variable) {
     const v = S.cfg.vars[variable], span = v.hi - v.lo, { nx, ny, bed, dyn, h } = G;
-    const z = new Float32Array(G.n), ice = new Float32Array(G.n);
-    for (let k = 0; k < G.n; k++) { z[k] = bed[k] + thk[k] * 0.1; ice[k] = thk[k] >= 5 && Number.isFinite(z[k]) ? 1 : 0; }
-    // the ice smoothed over 5x5 cells (1-4-6-4-1 weights, along rows, then columns): the shader cuts it at about 0.4, so
-    // the outline runs smoothly across the cells instead of along their steps
-    const blur = (src, step, len, count, stride) => {
-      const out = new Float32Array(G.n);
-      for (let a = 0; a < count; a++) for (let b = 0; b < len; b++) {
-        let sum = 0;
-        for (let d = -2; d <= 2; d++) sum += [1, 4, 6, 4, 1][d + 2] * src[a * stride + Math.min(Math.max(b + d, 0), len - 1) * step];
-        out[a * stride + b * step] = sum / 16;
+    const z = new Float32Array(G.n), ice = new Float32Array(G.n), t = new Float32Array(G.n);
+    for (let k = 0; k < G.n; k++) {
+      const ok = Number.isFinite(bed[k]);
+      t[k] = ok ? thk[k] * 0.1 : 0; ice[k] = thk[k] >= 5 && ok ? 1 : 0;
+    }
+    // the ice and its thickness smoothed over 5x5 cells (1-4-6-4-1 weights, along rows, then columns)
+    const blur1 = (src, step, len, count, stride) => {
+      const out = new Float32Array(G.n), at = (b) => Math.min(Math.max(b, 0), len - 1) * step;
+      for (let a = 0; a < count; a++) {
+        const o = a * stride;
+        for (let b = 0; b < len; b++) {
+          out[o + b * step] = (src[o + at(b - 2)] + 4 * src[o + at(b - 1)] + 6 * src[o + b * step] + 4 * src[o + at(b + 1)]
+                               + src[o + at(b + 2)]) / 16;
+        }
       }
       return out;
     };
-    const smooth = blur(blur(ice, 1, nx, ny, nx), nx, ny, nx, 1);
+    const blur = (src) => blur1(blur1(src, 1, nx, ny, nx), nx, ny, nx, 1);
+    // smooth: the shader cuts it at about 0.4, so the outline runs smoothly across the cells instead of along
+    // their steps. The surface: the model's inside; towards the margin the lower of
+    // - the ice thinning out to the bedrock (smoothed thickness, down to 0 at the outline): on gentle ground, and
+    // - the ice surface around, carried on level (ext): against a steep wall the ice ends where that level meets
+    //   the rock, along a smooth line, instead of climbing the wall with the bedrock in teeth, one per cell
+    const smooth = blur(ice), tb = blur(t), num = blur(ice.map((x, k) => x ? bed[k] + t[k] : 0));
+    for (let k = 0; k < G.n; k++) {
+      const w = smooth[k], top = bed[k] + t[k];
+      const margin = Math.min(num[k] / (w || 1), bed[k] + (w * t[k] + (1 - w) * tb[k]) * Math.min(1, w / 0.8));
+      const f = Math.min(Math.max((w - 0.7) / 0.3, 0), 1) * ice[k];      // 1 well inside the ice
+      z[k] = w > 0 ? margin + (top - margin) * f * f * (3 - 2 * f) : top;
+    }
     const vals = new Float32Array(G.n);
     for (let k = 0; k < G.n; k++) {
       vals[k] = variable === "thk" ? (thk[k] * 0.1 - v.lo) / span
