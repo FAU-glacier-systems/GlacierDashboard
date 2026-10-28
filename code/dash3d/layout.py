@@ -65,7 +65,8 @@ TEXTS = {
         "funded_short": "Funded by the European Union",
         "igm_tip": "Modelled with IGM, the Instructed Glacier Model",
         # in the browser
-        "warming_tip": "Warming of the Alps in {year} compared with 2000–2019 (climate model)",
+        "warming_tip": "Warming of the Alps in {year} compared with pre-industrial times (1871–1900): climate model "
+                       "plus observed warming up to 2000–2019 (MeteoSwiss)",
         "largest": "Largest glaciers", "none": "Nothing found", "peak": "Peak", "glacier": "Glacier",
         "peak_tip": "Click to fly to this peak",
         "update": "A new version of this page is available.", "reload": "Reload",
@@ -90,7 +91,8 @@ TEXTS = {
         "funded": "Gefördert von der Europäischen Union · Europäischer Forschungsrat",
         "funded_short": "Gefördert von der Europäischen Union",
         "igm_tip": "Modelliert mit IGM, dem Instructed Glacier Model",
-        "warming_tip": "Erwärmung der Alpen im Jahr {year} gegenüber 2000–2019 (Klimamodell)",
+        "warming_tip": "Erwärmung der Alpen im Jahr {year} gegenüber vorindustrieller Zeit (1871–1900): Klimamodell "
+                       "plus beobachtete Erwärmung bis 2000–2019 (MeteoSchweiz)",
         "largest": "Größte Gletscher", "none": "Nichts gefunden", "peak": "Gipfel", "glacier": "Gletscher",
         "peak_tip": "Klicken, um zu diesem Gipfel zu fliegen",
         "update": "Eine neue Version dieser Seite ist verfügbar.", "reload": "Neu laden",
@@ -126,7 +128,9 @@ _MAP_CONFIG = {
     "scenario_labels": config.SCENARIO_LABELS,
     "search": SEARCH_LIST,
     "largest": LARGEST,
-    "warming": [[round(float(v), 2) for v in row] for row in WARMING],   # per scenario and year, in °C (store.py)
+    # warming since 1871-1900 per scenario and year, in °C: the model's (store.py) plus the observed 2000-2019 offset
+    "warming": [[round(float(v) + config.PREINDUSTRIAL_OFFSET, 2) for v in row] for row in WARMING],
+    "warming_base": config.PREINDUSTRIAL_OFFSET,   # 2000-2019: white in the climate stripes
     "default_rgi": config.DEFAULT_RGI,  # the glacier on page load; the button under the compass flies there
     "version": BUILD,                  # map3d.js offers a reload when the server's differs (api.py)
     "peaks_url": PEAKS_URL if config.PEAKS else None,   # loaded when the search is first used (map3d.js)

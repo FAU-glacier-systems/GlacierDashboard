@@ -194,8 +194,9 @@ clientside_callback(
 )
 
 # the year in the title, and the year slider as climate stripes: up to the shown year one stripe per year, coloured
-# by the model's warming of the Alps in the chosen scenario (cfg.warming), on one scale for all scenarios
-# (white at 0, darkest blue at -1.5 °C, darkest red at +4.5 °C), so RCP 8.5 is visibly redder; the dot takes the
+# by the warming of the Alps since 1871-1900 in the chosen scenario (cfg.warming), on one scale for all scenarios
+# (white at the 2000-2019 level, cfg.warming_base; darkest blue 1.5 °C below it, darkest red 4.5 °C above it), so
+# RCP 8.5 is visibly redder; the dot takes the
 # colour of its year. The slider's filled part shows its share of the stripes (--year-frac, style3d.css).
 clientside_callback(
     """function(year, scenario, cfg) {
@@ -212,7 +213,7 @@ clientside_callback(
         const root = document.documentElement.style;
         if (w) {
             const pos = (a) => a < 0 ? 0.5 + 0.5 * Math.max(a / 1.5, -1) : 0.5 + 0.5 * Math.min(a / 4.5, 1);
-            const cols = w.map(a => colour(pos(a)));
+            const cols = w.map(a => colour(pos(a - (cfg.warming_base || 0))));
             // one stripe per year, centred on the year's place on the slider
             const edge = (k) => (Math.min(Math.max((k + 0.5) / n, 0), 1) * 100).toFixed(2) + '%';
             const parts = cols.map((c, k) => `${c} ${k ? edge(k - 1) : '0%'} ${edge(k)}`);
@@ -228,7 +229,7 @@ clientside_callback(
     State("map_config", "data"),
 )
 
-# the scenario switch and its menu: the model's warming of the Alps in the displayed year (cfg.warming)
+# the scenario switch and its menu: the warming of the Alps since 1871-1900 in the displayed year (cfg.warming)
 clientside_callback(
     """function(scenario, year, cfg) {
         const keys = Object.keys(cfg.scenario_labels), n = keys.length;

@@ -83,6 +83,12 @@ CITIES = [
     ("Grenoble", "Grenoble", 5.7245, 45.1885),
 ]
 
+# How much warmer 2000-2019 was than pre-industrial times (1871-1900): the climate model's warming (store.py, against
+# 2000-2019) plus this is the warming since then. From MeteoSwiss's area-mean temperature of Switzerland (CHTM 1.4,
+# doi:10.18751/Climate/Timeseries/CHTM/1.4, annual means): 2000-2019 minus 1871-1900 = +2.08 °C (Alpine high
+# region "NorthHigh": +2.05 °C).
+PREINDUSTRIAL_OFFSET = 2.08
+
 # glacier shown on page load: the Great Aletsch Glacier
 DEFAULT_RGI = "RGI2000-v7.0-G-11-02596"
 if DEFAULT_RGI not in ALL_RGIS:

@@ -26,10 +26,10 @@ SOURCES_URL = {"en": "/imprint#sources", "de": "/impressum#quellen"}
 SOURCES_TITLE = {
     "en": ("Sources: glacier outlines RGI 7.0 (CC BY 4.0); terrain: Terrain Tiles (Mapzen, AWS) "
            "incl. EU-DEM (Copernicus) and DGM Austria (CC BY 4.0); peaks: © OpenStreetMap contributors (ODbL); "
-           "map: MapLibre"),
+           "observed warming: MeteoSwiss; map: MapLibre"),
     "de": ("Quellen: Gletscherumrisse RGI 7.0 (CC BY 4.0); Gelände: Terrain Tiles (Mapzen, AWS) "
            "mit EU-DEM (Copernicus) und DGM Österreich (CC BY 4.0); Gipfel: © OpenStreetMap-Mitwirkende (ODbL); "
-           "Karte: MapLibre"),
+           "beobachtete Erwärmung: MeteoSchweiz; Karte: MapLibre"),
 }
 SOURCES_LABEL = {"en": "Data sources and licences", "de": "Datenquellen und Lizenzen"}
 SOURCES_WORD = {"en": "Sources", "de": "Quellen"}
@@ -67,6 +67,8 @@ E-Mail: <a href="mailto:bitv@bayern.de">bitv@bayern.de</a><br>
 _CC_BY = '<a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>'
 _RGI = ('RGI 7.0 Consortium (2023): Randolph Glacier Inventory – A Dataset of Global Glacier Outlines, Version 7.0. '
         'NSIDC, <a href="https://doi.org/10.5067/f6jmovy5navz">doi:10.5067/f6jmovy5navz</a>')
+_SWISSMEAN = ('MeteoSwiss, <a href="https://doi.org/10.18751/Climate/Timeseries/CHTM/1.4">Area-mean temperatures of '
+              'Switzerland</a> (CHTM 1.4)')
 _TERRAIN = '<a href="https://registry.opendata.aws/terrain-tiles/">Terrain Tiles</a> (Mapzen, AWS Open Data)'
 _TERRAIN_CREDIT = ("Produced using Copernicus data and information funded by the European Union – EU-DEM layers; "
                    "© offene Daten Österreichs – Digitales Geländemodell (DGM) Österreich")
@@ -99,6 +101,8 @@ Hochschulinnovationsgesetzes (BayHIG) eine staatliche Einrichtung und zugleich e
 <p>Geländemodell: {_TERRAIN} aus SRTM, GMTED2010, ETOPO1 und EU-DEM, ergänzt um das Gletscherbett aus den
 Modellrechnungen. Enthält: {_TERRAIN_CREDIT} ({_CC_BY}). {_TERRAIN_ALL}Vollständige Quellenangaben</a>.</p>
 <p>Gipfel in der Suche: {_OSM[0]} ({_ODBL}).</p>
+<p>Erwärmung seit vorindustrieller Zeit (Szenario-Taste und Jahresleiste): die Erwärmung im Klimamodell gegenüber
+2000–2019 plus die beobachtete Erwärmung von 1871–1900 bis 2000–2019 (+2,1 °C), berechnet aus {_SWISSMEAN}.</p>
 <p>Kartenbibliothek: <a href="https://maplibre.org">MapLibre GL JS</a> (BSD-3-Clause).</p>
 
 <h2>Förderung</h2>
@@ -221,6 +225,8 @@ President, Prof. Dr. Joachim Hornegger.</p>
 <p>Terrain: {_TERRAIN} from SRTM, GMTED2010, ETOPO1 and EU-DEM, with the glacier bed from the model runs
 merged in. Contains: {_TERRAIN_CREDIT} ({_CC_BY}). {_TERRAIN_ALL}Full attribution</a>.</p>
 <p>Peaks in the search: {_OSM[1]} ({_ODBL}).</p>
+<p>Warming since pre-industrial times (scenario button and year slider): the climate model's warming against
+2000–2019 plus the observed warming from 1871–1900 to 2000–2019 (+2.1 °C), computed from {_SWISSMEAN}.</p>
 <p>Map library: <a href="https://maplibre.org">MapLibre GL JS</a> (BSD-3-Clause).</p>
 
 <h2>Funding</h2>
