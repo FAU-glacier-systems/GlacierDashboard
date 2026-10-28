@@ -1,11 +1,10 @@
-"""Server callbacks: selection, settings from the URL, and the area series of the selection."""
+"""Server callbacks: selection and settings from the URL."""
 from dash import Input, Output, State, callback, ctx
 from dash.exceptions import PreventUpdate
 
 from . import config
 
 from .colours import VAR_STYLE
-from .store import SERIES, SERIES_INDEX
 
 
 @callback(
@@ -49,10 +48,3 @@ def set_year(search):
         year = config.default_year()
     return year if year in config.YEARS else config.default_year()
 
-
-@callback(Output("series_data", "data"), Input("selected_rgi", "data"))
-def series_data(rgi):
-    """Area of the selected glacier (or the sum of all), per scenario and year."""
-    arr = SERIES["area"]
-    data = arr[SERIES_INDEX[rgi]] if rgi in SERIES_INDEX else arr.sum(axis=0)
-    return {"area": [[float(f"{v:.4g}") for v in row] for row in data]}

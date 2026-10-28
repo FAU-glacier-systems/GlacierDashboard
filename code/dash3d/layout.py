@@ -8,7 +8,7 @@ import legal
 
 from .api import BUILD, PEAKS_URL
 from .colours import VAR_STYLE, colour_stops, var_config
-from .store import ALPS_BOUNDS, GLACIER_IDS, GLACIERS, SERIES
+from .store import ALPS_BOUNDS, GLACIER_IDS, GLACIERS, SERIES, WARMING
 from .terrain import DEM_MAXZOOM, TERRAIN_VERSION
 
 # page description and the preview shown when a link is shared (Mastodon, Slack, LinkedIn, messengers)
@@ -55,16 +55,17 @@ TEXTS = {
         "title": "Alpine glaciers in ", "title_tip": "Back to all glaciers", "default_tip": "To the Great Aletsch Glacier",
         "theme": "Switch light/dark theme",
         "intro_head": f"{N} Alpine glaciers, modelled from 2000 to 2100",
-        "intro": " under three greenhouse gas scenarios. Press ▶ to watch them change. Click a glacier or search "
-                 "for one (top) to see its ice area next to the scenario; click the colour bar to show flow speed, "
-                 "mass balance or temperature.",
+        "intro": " under three greenhouse gas scenarios. Press ▶ to watch them change; the scenario button shows "
+                 "how much warmer the Alps get. Click a glacier or search for one (top) to fly there; click the colour "
+                 "bar to show flow speed, mass balance or temperature.",
         "intro_ok": "Got it",
         "scenario": "RCP scenario", "scenario_tip": "Click to choose the greenhouse gas scenario",
         "play": " Play", "pause": " Pause", "play_tip": "Play or pause the years",
         "funded": "Funded by the European Union · European Research Council",
         "funded_short": "Funded by the European Union",
-        "area_tip": "Ice area of the selection in",
+        "igm_tip": "Modelled with IGM, the Instructed Glacier Model",
         # in the browser
+        "warming_tip": "Warming of the Alps in {year} compared with 2000–2019 (climate model)",
         "largest": "Largest glaciers", "none": "Nothing found", "peak": "Peak", "glacier": "Glacier",
         "peak_tip": "Click to fly to this peak",
         "update": "A new version of this page is available.", "reload": "Reload",
@@ -79,15 +80,17 @@ TEXTS = {
         "title": "Alpengletscher ", "title_tip": "Zurück zu allen Gletschern", "default_tip": "Zum Großen Aletschgletscher",
         "theme": "Hell/dunkel umschalten",
         "intro_head": f"{N} Alpengletscher, modelliert von 2000 bis 2100",
-        "intro": " unter drei Treibhausgas-Szenarien. Drücken Sie ▶, um ihre Entwicklung zu sehen. Klicken Sie auf "
-                 "einen Gletscher oder suchen Sie ihn (oben), um seine Eisfläche neben dem Szenario zu sehen; "
-                 "klicken Sie auf die Farbskala, um Fließgeschwindigkeit, Massenbilanz oder Temperatur zu zeigen.",
+        "intro": " unter drei Treibhausgas-Szenarien. Drücken Sie ▶, um ihre Entwicklung zu sehen; die Szenario-Taste "
+                 "zeigt, wie viel wärmer die Alpen werden. Klicken Sie auf einen Gletscher oder suchen Sie ihn (oben), "
+                 "um dorthin zu fliegen; klicken Sie auf die Farbskala, um Fließgeschwindigkeit, Massenbilanz oder "
+                 "Temperatur zu zeigen.",
         "intro_ok": "Verstanden",
         "scenario": "RCP-Szenario", "scenario_tip": "Klicken, um das Treibhausgas-Szenario zu wählen",
         "play": " Start", "pause": " Pause", "play_tip": "Jahre abspielen oder anhalten",
         "funded": "Gefördert von der Europäischen Union · Europäischer Forschungsrat",
         "funded_short": "Gefördert von der Europäischen Union",
-        "area_tip": "Eisfläche der Auswahl im Jahr",
+        "igm_tip": "Modelliert mit IGM, dem Instructed Glacier Model",
+        "warming_tip": "Erwärmung der Alpen im Jahr {year} gegenüber 2000–2019 (Klimamodell)",
         "largest": "Größte Gletscher", "none": "Nichts gefunden", "peak": "Gipfel", "glacier": "Gletscher",
         "peak_tip": "Klicken, um zu diesem Gipfel zu fliegen",
         "update": "Eine neue Version dieser Seite ist verfügbar.", "reload": "Neu laden",
@@ -97,7 +100,7 @@ TEXTS = {
     },
 }
 BROWSER_TEXTS = ("largest", "none", "peak", "glacier", "peak_tip", "update", "reload", "title_tip", "default_tip", "no_webgl", "in", "of", "gone",
-                 "decimal", "thickness", "theme", "play", "pause", "compass", "area_tip")
+                 "decimal", "thickness", "theme", "play", "pause", "compass", "warming_tip")
 
 # [rgi, name] of all glaciers, named ones first (alphabetically), then the unnamed ones by RGI ID
 SEARCH_LIST = sorted(([r, config.GLACIER_NAMES.get(r, "")] for r in GLACIERS),
@@ -123,6 +126,7 @@ _MAP_CONFIG = {
     "scenario_labels": config.SCENARIO_LABELS,
     "search": SEARCH_LIST,
     "largest": LARGEST,
+    "warming": [[round(float(v), 2) for v in row] for row in WARMING],   # per scenario and year, in °C (store.py)
     "default_rgi": config.DEFAULT_RGI,  # the glacier on page load; the button under the compass flies there
     "version": BUILD,                  # map3d.js offers a reload when the server's differs (api.py)
     "peaks_url": PEAKS_URL if config.PEAKS else None,   # loaded when the search is first used (map3d.js)
@@ -162,7 +166,6 @@ def make_page(app, lang):
             dcc.Store(id="property"),          # chosen by clicking the colour bar
             dcc.Store(id="scenario"),          # chosen with the scenario buttons
             dcc.Store(id="map_config", data=MAP_CONFIG[lang]),
-            dcc.Store(id="series_data"),       # area of the selection per scenario and year, for the scenario switch
             dcc.Store(id="theme", data="dark", storage_type="local"),
             dcc.Interval(id="timelapse_interval", interval=250, disabled=True),
 
@@ -253,6 +256,10 @@ def make_page(app, lang):
 
             html.Div(className="legal-corner", children=[legal.sources_link(lang), legal.legal_links(lang)]),
             html.Div(className="logo-corner", children=[
+                # the glacier model the runs were made with, linked to its site
+                html.A(href="https://igm-model.org", target="_blank", rel="noopener", className="logo-igm-link",
+                       title=T["igm_tip"], children=html.Img(src=app.get_asset_url(config.LOGO_IGM), className="logo-igm",
+                                                              alt=T["igm_tip"])),
                 html.Img(src=app.get_asset_url(config.LOGO_FAU), className="logo-fau",
                          alt="Friedrich-Alexander-Universität Erlangen-Nürnberg"),
                 # the EU emblem with its funding statement in words (ERC/EU visibility rules; not on phones, too

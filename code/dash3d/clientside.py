@@ -193,53 +193,63 @@ clientside_callback(
     prevent_initial_call=True,
 )
 
-# the year in the title; the slider's dot takes the year's colour on the climate-stripes ramp (the stops of the
-# slider in style3d.css), its filled part the share of the ramp up to the year
+# the year in the title, and the year slider as climate stripes: up to the shown year one stripe per year, coloured
+# by the model's warming of the Alps in the chosen scenario (cfg.warming), on one scale for all scenarios
+# (white at 0, darkest blue at -1.5 °C, darkest red at +4.5 °C), so RCP 8.5 is visibly redder; the dot takes the
+# colour of its year. The slider's filled part shows its share of the stripes (--year-frac, style3d.css).
 clientside_callback(
-    """function(year, cfg) {
+    """function(year, scenario, cfg) {
         if (year == null) return window.dash_clientside.no_update;
         const stops = ['#08306b', '#2171b5', '#6baed6', '#deebf7', '#fcbba1', '#fb6a4a', '#cb181d', '#67000d']
             .map(h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)));
-        const frac = Math.min(Math.max((year - cfg.years[0]) / (cfg.years[1] - cfg.years[0]), 0), 1);
-        const f = frac * (stops.length - 1);
-        const i = Math.min(Math.floor(f), stops.length - 2), t = f - i;
-        const c = stops[i].map((v, k) => Math.round(v + (stops[i + 1][k] - v) * t));
-        document.documentElement.style.setProperty('--year-colour', `rgb(${c.join(',')})`);
-        document.documentElement.style.setProperty('--year-frac', Math.max(frac, 0.001));
+        const colour = (p) => {                  // p from 0 (darkest blue) to 1 (darkest red)
+            const f = Math.min(Math.max(p, 0), 1) * (stops.length - 1), i = Math.min(Math.floor(f), stops.length - 2);
+            return 'rgb(' + stops[i].map((v, k) => Math.round(v + (stops[i + 1][k] - v) * (f - i))).join(',') + ')';
+        };
+        const [y0, y1] = cfg.years, n = y1 - y0, frac = Math.min(Math.max((year - y0) / n, 0), 1);
+        const si = Object.keys(cfg.scenario_labels).indexOf(scenario);
+        const w = cfg.warming && cfg.warming[Math.max(si, 0)];
+        const root = document.documentElement.style;
+        if (w) {
+            const pos = (a) => a < 0 ? 0.5 + 0.5 * Math.max(a / 1.5, -1) : 0.5 + 0.5 * Math.min(a / 4.5, 1);
+            const cols = w.map(a => colour(pos(a)));
+            // one stripe per year, centred on the year's place on the slider
+            const edge = (k) => (Math.min(Math.max((k + 0.5) / n, 0), 1) * 100).toFixed(2) + '%';
+            const parts = cols.map((c, k) => `${c} ${k ? edge(k - 1) : '0%'} ${edge(k)}`);
+            root.setProperty('--stripes', `linear-gradient(to right, ${parts.join(', ')})`);
+            root.setProperty('--year-colour', cols[Math.round(frac * n)]);
+        } else {                                  // a page from before cfg.warming: blue to red along the years
+            root.setProperty('--year-colour', colour(frac));
+        }
+        root.setProperty('--year-frac', Math.max(frac, 0.001));
         return String(year);
     }""",
-    Output("year_label", "children"), Input("year_slider", "value"), State("map_config", "data"),
+    Output("year_label", "children"), Input("year_slider", "value"), Input("scenario", "data"),
+    State("map_config", "data"),
 )
 
-# the scenario switch and its menu: the selection's area in the displayed year (the share of 2000 in the tooltip)
+# the scenario switch and its menu: the model's warming of the Alps in the displayed year (cfg.warming)
 clientside_callback(
-    """function(series, scenario, year, cfg) {
+    """function(scenario, year, cfg) {
         const keys = Object.keys(cfg.scenario_labels), n = keys.length;
         const H = (type, props) => ({namespace: 'dash_html_components', type, props});
         const cls = keys.map(k => 'sc-opt' + (k === scenario ? ' is-sel' : ''));
         const label = cfg.scenario_labels[scenario] || '';
-        if (!series || year == null) {
-            return [cls, Array(n).fill(''), Array(n).fill(''),
-                    [H('Strong', {children: label}), H('Span', {className: 'sc-btn-chevron', children: '▾'})]];
-        }
-        const data = series.area, unit = 'km²';
-        const y0 = cfg.years[0], k = Math.min(Math.max(year - y0, 0), data[0].length - 1);
-        const t = cfg.t, dec = (x) => x.replace('.', t.decimal);
-        const fmt = (v) => dec(v >= 100 ? v.toFixed(0) : v >= 10 ? v.toFixed(1) : v >= 1 ? v.toFixed(2) : v.toPrecision(2));
-        const pct = (v, ref) => !(ref > 0) ? '–' : v <= 0 ? t.gone : v / ref < 0.01 ? '<1 %' : Math.round(v / ref * 100) + ' %';
-        const val = keys.map((_, i) => fmt(data[i][k]) + '\\u202f' + unit);
-        const share = keys.map((_, i) => pct(data[i][k], data[i][0]));
-        const si = keys.indexOf(scenario);
-        return [cls, val,
-                keys.map((key, i) => `${cfg.scenario_labels[key]}: ${val[i]} ${t.in} ${year}, ${share[i]} ${t.of} ${y0}`),
+        const chevron = H('Span', {className: 'sc-btn-chevron', children: '▾'});
+        if (!cfg.warming || year == null) return [cls, Array(n).fill(''), Array(n).fill(''), [H('Strong', {children: label}), chevron]];
+        const t = cfg.t, k = Math.min(Math.max(year - cfg.years[0], 0), cfg.warming[0].length - 1);
+        const val = keys.map((_, i) => {
+            const a = cfg.warming[i][k];
+            return (a >= 0.05 ? '+' : a <= -0.05 ? '−' : '±') + Math.abs(a).toFixed(1).replace('.', t.decimal) + '\u202f°C';
+        });
+        const tip = t.warming_tip.replace('{year}', year), si = keys.indexOf(scenario);
+        return [cls, val, keys.map((key, i) => `${cfg.scenario_labels[key]}: ${val[i]} · ${tip}`),
                 [H('Strong', {children: label}), H('Span', {className: 'sc-btn-value', children: si >= 0 ? val[si] : '',
-                                               title: `${t.area_tip} ${year}`}),
-                 H('Span', {className: 'sc-btn-chevron', children: '▾'})]];
+                                                            title: tip}), chevron]];
     }""",
     Output({"type": "sc_opt", "index": ALL}, "className"),
     Output({"type": "sc_val", "index": ALL}, "children"),
     Output({"type": "sc_opt", "index": ALL}, "title"),
     Output("sc_btn", "children"),
-    Input("series_data", "data"), Input("scenario", "data"),
-    Input("year_slider", "value"), State("map_config", "data"),
+    Input("scenario", "data"), Input("year_slider", "value"), State("map_config", "data"),
 )

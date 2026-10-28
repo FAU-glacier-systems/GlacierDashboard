@@ -111,6 +111,37 @@ def _load_series():
 
 
 SERIES = dict(zip(("volume", "area"), _load_series()))
+
+
+def _load_warming():
+    """Mean temperature of the climate model over all glacier grids (every cell, so the average does not drift as
+    the ice shrinks; every 4th cell is plenty), per scenario and year, as warming against 2000-2019 (the observed
+    climate, the same in all scenarios). Computed from the store once and cached."""
+    path = STORE_DIR / "warming.npz"
+    if path.is_file():
+        z = np.load(path)
+        if list(z["ids"]) == GLACIER_IDS:
+            return z["warming"]
+    log("computing the Alpine temperature from the store (once) ...")
+    total, weight = np.zeros((3, len(config.YEARS))), 0.0
+    for g in GLACIERS.values():
+        q = g.prop("mean_temp")[:, :, ::4, ::4]
+        offset, scale = g.quant["mean_temp"]
+        cells = (q[0, 0] != 255).sum() * (4 * g.dx) ** 2
+        if not cells:
+            continue
+        total += np.nanmean(np.where(q == 255, np.nan, offset + q.astype(np.float32) * scale), axis=(2, 3)) * cells
+        weight += cells
+    temp = total / weight
+    warming = temp - temp[:, :20].mean()
+    try:
+        np.savez(path, ids=np.array(GLACIER_IDS), warming=warming)
+    except OSError as ex:
+        log("could not cache the warming:", ex)
+    return warming
+
+
+WARMING = _load_warming()
 SERIES_INDEX = {r: k for k, r in enumerate(GLACIER_IDS)}
 
 

@@ -113,12 +113,12 @@ html[data-theme="dark"] .theme-ctrl button { color: #e6e6e6; }
 .year-label { font-weight: 700; line-height: 1; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
 /* on wide screens the top panel and the dock share one width, centred and clear of the map buttons */
 :root { --bar-w: min(1200px, calc(100vw - 130px)); }
-/* the years up to the shown one in the colours of the climate stripes, blue to red over the whole slider: the filled
-   part shows its share of the ramp (--year-frac, set with the year in clientside.py); the dot takes the colour of
-   its year (--year-colour, from the same stops) */
+/* the years up to the shown one as climate stripes (--stripes, one per year over the whole slider, set with the
+   year and scenario in clientside.py): the filled part shows its share of them (--year-frac); the dot takes the
+   colour of its year (--year-colour). Before the stripes are set: blue to red. */
 .dock .dash-slider-track { height: 6px; }
 .app3d .dock .dash-slider-root .dash-slider-range {           /* outranks Dash's "included" fill */
-  background: linear-gradient(to right, #08306b, #2171b5, #6baed6, #deebf7, #fcbba1, #fb6a4a, #cb181d, #67000d)
+  background: var(--stripes, linear-gradient(to right, #08306b, #2171b5, #6baed6, #deebf7, #fcbba1, #fb6a4a, #cb181d, #67000d))
               left / calc(100% / var(--year-frac, 1)) 100% no-repeat;
 }
 .dock .dash-slider-thumb { background: var(--year-colour, #6baed6); border: 2px solid var(--fg); }
@@ -202,6 +202,9 @@ html[data-theme="dark"] .theme-ctrl button { color: #e6e6e6; }
 .logo-corner img { height: 18px; width: auto; display: block; }
 .logo-corner .funded-text { font-size: 11px; color: var(--muted); text-shadow: 0 0 3px var(--bg); white-space: nowrap; }
 html[data-theme="dark"] .logo-corner .logo-fau { filter: brightness(0) invert(0.9); }
+.logo-igm-link { display: block; line-height: 0; }
+.logo-corner .logo-igm { height: 24px; }
+html[data-theme="dark"] .logo-corner .logo-igm { filter: brightness(1.6); }   /* its blue, lighter on the dark map */
 /* the ERC/EU logo comes on black; the light theme gets a copy with a transparent background and dark text */
 .logo-corner .logo-erc { border-radius: 0; }
 .logo-corner .logo-erc-light, html[data-theme="light"] .logo-corner .logo-erc-dark { display: none; }
@@ -275,9 +278,9 @@ html[data-theme="dark"] .maplibregl-ctrl-group .maplibregl-ctrl-icon { filter: i
   .dock-time { gap: 8px; }
   .dock-time .year { padding: 0 12px; }
   .sc-btn { padding: 5px 8px; gap: 6px; }
-  .sc-btn-value { display: none; }   /* the volumes are in the menu */
   .play-btn { padding-left: 10px; padding-right: 10px; }
   .play-word { display: none; }
+  .dock .dash-slider-mark:nth-of-type(2), .dock .dash-slider-mark:nth-of-type(4) { display: none; }   /* 2000, 2050, 2100 */
   .map-title .year-label { font-size: 30px; }
   .intro { font-size: 12px; }
 }
@@ -289,6 +292,7 @@ html[data-theme="dark"] .maplibregl-ctrl-group .maplibregl-ctrl-icon { filter: i
   .logo-corner { right: 8px; gap: 6px; }
   .logo-corner img { height: 13px; }
   .logo-corner .funded-text { display: none; }
+  .logo-corner .logo-igm { height: 17px; }
   .sources-word { display: none; }
 }
 /* narrow phones (360px is common on Android): tighter links and logos, so "Deutsch" keeps clear of the FAU logo */
@@ -297,8 +301,8 @@ html[data-theme="dark"] .maplibregl-ctrl-group .maplibregl-ctrl-icon { filter: i
   .legal-corner .legal-links { gap: 2px 6px; }
   .logo-corner img { height: 12px; }
 }
-/* the narrowest phones (320px): the logos go above the links, the year marks get smaller */
-@media (max-width: 340px) {
+/* narrow phones (up to 370px, e.g. 360px Android, 320px): the logos go above the links, the year marks get smaller */
+@media (max-width: 370px) {
   .logo-corner { bottom: 19px; }
   .bottom-stack { bottom: 38px; }
   .dock .dash-slider-mark { font-size: 10px; }

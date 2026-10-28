@@ -113,6 +113,7 @@ INDEX_STRING = """<!DOCTYPE html>
 </body>
 </html>"""
 
+LOGO_IGM = "logo_igm.svg"       # from github.com/instructed-glacier-model/igm (logo/), the model behind the runs
 LOGO_FAU = "Friedrich-Alexander-Universität_Erlangen-Nürnberg_Logo_07.2022.svg.png"
 LOGO_ERC = "LOGO_ERC-FLAG_EU-no text.png"
 LOGO_ERC_LIGHT = "LOGO_ERC-FLAG_EU-no text-light.png"     # transparent background, dark text
