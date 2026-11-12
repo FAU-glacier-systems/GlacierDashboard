@@ -9,7 +9,7 @@ import legal
 from .api import BUILD, PEAKS_URL
 from .colours import VAR_STYLE, colour_stops, var_config
 from .store import ALPS_BOUNDS, GLACIER_IDS, GLACIERS, SERIES, WARMING
-from .terrain import DEM_MAXZOOM, TERRAIN_BOUNDS, TERRAIN_VERSION
+from .terrain import DEM_MAXZOOM, TERRAIN_VERSION
 
 # page description and the preview shown when a link is shared (Mastodon, Slack, LinkedIn, messengers)
 SITE_URL = os.environ.get("SITE_URL", "https://www.glacier-evolution.nat.fau.de").rstrip("/")
@@ -134,7 +134,6 @@ def play_label(lang):
 _MAP_CONFIG = {
     "alps_bounds": ALPS_BOUNDS,
     "dem_maxzoom": DEM_MAXZOOM,
-    "terrain_bounds": TERRAIN_BOUNDS,  # no terrain tiles outside (the server answers 404 there)
     "terrain_url": f"/api3d/terrain/{TERRAIN_VERSION}/{{z}}/{{x}}/{{y}}.png",
     "glaciers": glaciers_geojson(),
     "meshes": {r: {**g.mesh_info(), "k": k} for k, (r, g) in enumerate(GLACIERS.items())},

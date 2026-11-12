@@ -21,9 +21,11 @@ DEM_MAXZOOM = 12            # z12 is about 26 m per pixel in the Alps, close to 
 # surface of about 2000, which lies tens of metres above the modelled ice, and MapLibre uses coarse tiles
 # for distant parts of a tilted view and while finer tiles load.
 TERRAIN_VERSION = "v3"      # part of the tile URL; bump when the merge changes, so all caches start over
-# Terrain is served for the Alps and their surroundings only (west, south, east, north): every tile is fetched
-# from the open DEM and kept on disk, so tiles for the whole world would fill it. The margin keeps the edge, where
-# the ground drops to sea level, far from every glacier, also in a tilted view. map3d.js asks for no tiles outside.
+# Full-resolution terrain is served for the Alps and their surroundings only (west, south, east, north): every
+# tile is fetched from the open DEM and kept on disk, so fine tiles for the whole world would fill it. The rest of
+# the world has terrain up to WORLD_MAXZOOM (about 22 000 tiles in all); finer tiles there are enlarged from it
+# (coarse_terrain), without fetching or storing anything.
+WORLD_MAXZOOM = 7           # about 850 m per pixel at the latitude of the Alps
 TERRAIN_BOUNDS = [ALPS_BOUNDS[0][0] - 1.5, ALPS_BOUNDS[0][1] - 1.0, ALPS_BOUNDS[1][0] + 1.5, ALPS_BOUNDS[1][1] + 1.0]
 
 
@@ -36,7 +38,7 @@ def tile_bounds(z, x, y):
 
 
 def tile_served(z, x, y):
-    """Whether the tile touches TERRAIN_BOUNDS."""
+    """Whether the tile is served at full resolution: it touches TERRAIN_BOUNDS."""
     lon0, lat0, lon1, lat1 = tile_bounds(z, x, y)
     w, s, e, n = TERRAIN_BOUNDS
     return lon0 < e and lon1 > w and lat0 < n and lat1 > s
@@ -140,6 +142,18 @@ def merged_terrain(z, x, y):
     data = encode_terrarium(elev)
     _write_atomic(path, data)
     return data
+
+
+def coarse_terrain(z, x, y):
+    """Terrain tile outside TERRAIN_BOUNDS: up to WORLD_MAXZOOM as everywhere, finer ones enlarged from the
+    WORLD_MAXZOOM tile they lie in (bilinear; nginx keeps the result, nothing is stored here)."""
+    if z <= WORLD_MAXZOOM:
+        return merged_terrain(z, x, y)
+    k = 2 ** (z - WORLD_MAXZOOM)
+    src = decode_terrarium(merged_terrain(WORLD_MAXZOOM, x // k, y // k))
+    fi = (x % k) * 256 / k + (np.arange(256) + 0.5) / k - 0.5     # pixel centres, in pixels of the coarse tile
+    fj = (y % k) * 256 / k + (np.arange(256) + 0.5) / k - 0.5
+    return encode_terrarium(bilinear(src, *np.meshgrid(fi, fj)))
 
 
 def warm_dem():
