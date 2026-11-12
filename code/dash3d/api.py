@@ -17,7 +17,7 @@ from .store import GLACIER_IDS, GLACIERS
 from .terrain import DEM_MAXZOOM, TERRAIN_VERSION, merged_terrain
 
 ASSETS3D_DIR = config.CODE_DIR / "assets3d"
-MAPLIBRE = "vendor/maplibre-gl-5.24.0"
+MAPLIBRE = "vendor/maplibre-gl-5.24.1"
 
 bp = Blueprint("api3d", __name__)
 
