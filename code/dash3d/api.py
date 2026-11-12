@@ -14,7 +14,7 @@ from . import config
 
 from .colours import VAR_STYLE
 from .store import GLACIER_IDS, GLACIERS
-from .terrain import DEM_MAXZOOM, TERRAIN_VERSION, merged_terrain
+from .terrain import DEM_MAXZOOM, TERRAIN_VERSION, merged_terrain, tile_served
 
 ASSETS3D_DIR = config.CODE_DIR / "assets3d"
 MAPLIBRE = "vendor/maplibre-gl-6.18.0"
@@ -76,6 +76,8 @@ def static3d(name):
 @bp.route("/api3d/terrain/<version>/<int:z>/<int:x>/<int:y>.png")
 def api_terrain(version, z, x, y):
     if version != TERRAIN_VERSION or not (0 <= z <= DEM_MAXZOOM and 0 <= x < 2 ** z and 0 <= y < 2 ** z):
+        abort(404)
+    if not tile_served(z, x, y):          # outside the Alps: nothing is fetched or stored (terrain.py)
         abort(404)
     return Response(merged_terrain(z, x, y), mimetype="image/png", headers={"Cache-Control": "public, max-age=604800"})
 

@@ -21,6 +21,10 @@ DEM_MAXZOOM = 12            # z12 is about 26 m per pixel in the Alps, close to 
 # surface of about 2000, which lies tens of metres above the modelled ice, and MapLibre uses coarse tiles
 # for distant parts of a tilted view and while finer tiles load.
 TERRAIN_VERSION = "v3"      # part of the tile URL; bump when the merge changes, so all caches start over
+# Terrain is served for the Alps and their surroundings only (west, south, east, north): every tile is fetched
+# from the open DEM and kept on disk, so tiles for the whole world would fill it. The margin keeps the edge, where
+# the ground drops to sea level, far from every glacier, also in a tilted view. map3d.js asks for no tiles outside.
+TERRAIN_BOUNDS = [ALPS_BOUNDS[0][0] - 1.5, ALPS_BOUNDS[0][1] - 1.0, ALPS_BOUNDS[1][0] + 1.5, ALPS_BOUNDS[1][1] + 1.0]
 
 
 def tile_bounds(z, x, y):
@@ -29,6 +33,13 @@ def tile_bounds(z, x, y):
     lat1 = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * y / n))))
     lat0 = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * (y + 1) / n))))
     return lon0, lat0, lon1, lat1
+
+
+def tile_served(z, x, y):
+    """Whether the tile touches TERRAIN_BOUNDS."""
+    lon0, lat0, lon1, lat1 = tile_bounds(z, x, y)
+    w, s, e, n = TERRAIN_BOUNDS
+    return lon0 < e and lon1 > w and lat0 < n and lat1 > s
 
 
 def tile_utm(z, x, y, zone, size=256):

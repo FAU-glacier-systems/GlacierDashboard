@@ -1137,7 +1137,9 @@
   // ---------------------------------------------------------------- map
   // the terrain tiles (DEM + model bedrock), for the 3D terrain and, as a second source, for the hillshade
   const demSource = (cfg) => ({ type: "raster-dem", tiles: [origin() + cfg.terrain_url], tileSize: 256,
-                                encoding: "terrarium", maxzoom: cfg.dem_maxzoom });
+                                encoding: "terrarium", maxzoom: cfg.dem_maxzoom,
+                                // only the Alps have terrain (terrain.py): no tiles are asked for elsewhere
+                                ...(cfg.terrain_bounds ? { bounds: cfg.terrain_bounds } : {}) });
   const TERRAIN = { source: "dem", exaggeration: 1.0 };
   // lit from the south-west like the ice (LIGHT), fixed to the map so the shadows stay put when it turns
   const HILLSHADE = { id: "hillshade", type: "hillshade", source: "dem-hs",
