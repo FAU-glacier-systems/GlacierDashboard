@@ -105,6 +105,9 @@ Modellrechnungen. Enthält: {_TERRAIN_CREDIT} ({_CC_BY}). {_TERRAIN_ALL}Vollstä
 <p>Gipfel in der Suche: {_OSM[0]} ({_ODBL}).</p>
 <p>Erwärmung seit vorindustrieller Zeit (Szenario-Taste und Jahresleiste, gemittelt über die 11 Jahre um jedes
 Jahr): die Erwärmung im Klimamodell gegenüber 2000–2019 plus die beobachtete Erwärmung von 1871–1900 bis 2000–2019 (+2,1 °C), berechnet aus {_SWISSMEAN}.</p>
+<p>Bewegte Linien auf der Karte der Fließgeschwindigkeit: Sie bewegen sich mit der Oberflächengeschwindigkeit im
+Modell, im Zeitraffer: Eine Sekunde zeigt drei Jahre Fließen. Das Modell liefert nur den Betrag, daher folgt ihre Richtung dem Gefälle der
+Eisoberfläche, geglättet über einige hundert Meter; so fließt Gletschereis in guter Näherung.</p>
 <p>Kartenbibliothek: <a href="https://maplibre.org">MapLibre GL JS</a> (BSD-3-Clause).</p>
 
 <h2>Förderung</h2>
@@ -231,6 +234,9 @@ merged in. Contains: {_TERRAIN_CREDIT} ({_CC_BY}). {_TERRAIN_ALL}Full attributio
 <p>Peaks in the search: {_OSM[1]} ({_ODBL}).</p>
 <p>Warming since pre-industrial times (scenario button and year slider, averaged over the 11 years around each
 year): the climate model's warming against 2000–2019 plus the observed warming from 1871–1900 to 2000–2019 (+2.1 °C), computed from {_SWISSMEAN}.</p>
+<p>Moving lines on the velocity map: they move with the model's surface velocity, as a time-lapse in which one
+second shows three years of flow. The model gives the speed only, so their direction is the downhill direction of the ice surface,
+smoothed over a few hundred metres, which is how glacier ice flows to a good approximation.</p>
 <p>Map library: <a href="https://maplibre.org">MapLibre GL JS</a> (BSD-3-Clause).</p>
 
 <h2>Funding</h2>
