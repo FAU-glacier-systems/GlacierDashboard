@@ -1135,6 +1135,14 @@
   });
 
   // ---------------------------------------------------------------- map
+  // the terrain tiles (DEM + model bedrock), for the 3D terrain and, as a second source, for the hillshade
+  const demSource = (cfg) => ({ type: "raster-dem", tiles: [origin() + cfg.terrain_url], tileSize: 256,
+                                encoding: "terrarium", maxzoom: cfg.dem_maxzoom });
+  const TERRAIN = { source: "dem", exaggeration: 1.0 };
+  // lit from the south-west like the ice (LIGHT), fixed to the map so the shadows stay put when it turns
+  const HILLSHADE = { id: "hillshade", type: "hillshade", source: "dem-hs",
+                      paint: { "hillshade-illumination-direction": 225, "hillshade-illumination-anchor": "map" } };
+
   function init(cfg) {
     const el = document.getElementById("map3d");
     if (!el || !window.maplibregl) return false;
@@ -1168,14 +1176,18 @@
     }
     S.map = map;
     // phones drop the WebGL context under memory pressure or in the background; MapLibre restores its own layers
-    // but not the ice: everything on the GPU is gone, so it is added again and reloaded
+    // but not the ice: everything on the GPU is gone, so it is added again and reloaded. MapLibre 6 keeps custom
+    // layers in the style without setting them up again, so they are removed first: onAdd runs in the new context.
+    // Both are the last layers, so adding them again keeps the order.
     map.on("webglcontextrestored", () => {
       const readd = () => {
         S.glaciers.clear(); S.pending.clear(); S.visible = []; S.progs = {}; S.frameShown = null; S.frameReq = null;
         S.gpu = undefined;                    // the GPU flow lines are set up again in the new context
         S.appliedVar = null; S.appliedTheme = null;
-        if (!map.getLayer("ice")) map.addLayer(iceLayer);
-        if (!map.getLayer("flow")) map.addLayer(flowLayer);
+        for (const L of [iceLayer, flowLayer]) { if (map.getLayer(L.id)) map.removeLayer(L.id); map.addLayer(L); }
+        // MapLibre 6 keeps the terrain's draped tiles from before the loss, which show the raw elevation tiles
+        // (purple-blue ground): the terrain is switched off and on so they are drawn again
+        map.setTerrain(null); map.setTerrain(TERRAIN);
         apply();
       };
       if (map.isStyleLoaded()) readd(); else map.once("style.load", readd);
@@ -1189,14 +1201,10 @@
     trackPanelHeight();
 
     map.on("load", () => {
-      const dem = { type: "raster-dem", tiles: [origin() + cfg.terrain_url], tileSize: 256,
-                    encoding: "terrarium", maxzoom: cfg.dem_maxzoom };
-      map.addSource("dem", dem);   // its sources are credited in the Impressum ("Daten und Quellen")
-      map.addSource("dem-hs", dem);   // hillshade wants its own source
-      map.setTerrain({ source: "dem", exaggeration: 1.0 });
-      // lit from the south-west like the ice (LIGHT), fixed to the map so the shadows stay put when it turns
-      map.addLayer({ id: "hillshade", type: "hillshade", source: "dem-hs",
-                     paint: { "hillshade-illumination-direction": 225, "hillshade-illumination-anchor": "map" } });
+      map.addSource("dem", demSource(cfg));   // its sources are credited in the Impressum ("Daten und Quellen")
+      map.addSource("dem-hs", demSource(cfg));   // hillshade wants its own source
+      map.setTerrain(TERRAIN);
+      map.addLayer(HILLSHADE);
       map.addLayer(iceLayer);
       map.addLayer(flowLayer);
 
