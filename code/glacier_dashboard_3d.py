@@ -36,7 +36,7 @@ app = Dash(
     # MapLibre is served from here (assets3d/vendor), so visitors' browsers contact no third party. Its path
     # holds its version and our own files carry the build (?v=), so browsers may keep all of them (api.py).
     external_stylesheets=[f"/static3d/{MAPLIBRE}/maplibre-gl.css", f"/static3d/style3d.css?v={BUILD}"],
-    external_scripts=[f"/static3d/{MAPLIBRE}/maplibre-gl.js", f"/static3d/map3d.js?v={BUILD}"],
+    external_scripts=[{"src": f"/static3d/{MAPLIBRE}/global.mjs", "type": "module"}, f"/static3d/map3d.js?v={BUILD}"],
     suppress_callback_exceptions=True,             # the page (layout.py) arrives by callback, per language
 )
 server = app.server

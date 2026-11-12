@@ -67,8 +67,8 @@
   // far-side clipping plane and the globe/flat transition. a_pos is relative to the glacier's origin (Mercator).
   const VS = `
     uniform float u_zscale; uniform float u_lift; uniform float u_zbias;
-    attribute vec2 a_pos; attribute vec4 a_zn; attribute vec2 a_ti;
-    varying vec3 v_n; varying float v_t; varying float v_ice; varying float v_side;
+    in vec2 a_pos; in vec4 a_zn; in vec2 a_ti;
+    out vec3 v_n; out float v_t; out float v_ice; out float v_side;
     void main() {
       v_n = a_zn.yzw; v_t = a_ti.x; v_ice = a_ti.y;
       float elev = a_zn.x + u_lift;                                // metres
@@ -88,14 +88,15 @@
   const FS = `
     precision mediump float;
     uniform sampler2D u_lut; uniform vec3 u_light;
-    varying vec3 v_n; varying float v_t; varying float v_ice; varying float v_side;
+    in vec3 v_n; in float v_t; in float v_ice; in float v_side;
+    out vec4 o;
     void main() {
       // fades out between 0.38 and 0.44 of the smoothed ice (applyFrame): a soft outline instead of a pixel staircase
       float a = smoothstep(0.38, 0.44, v_ice);
       if (a <= 0.0 || v_side < 0.0) discard;
-      vec3 c = v_t < -0.5 ? vec3(0.6) : texture2D(u_lut, vec2(clamp(v_t, 0.0, 1.0) * 0.99609375 + 0.001953125, 0.5)).rgb;
+      vec3 c = v_t < -0.5 ? vec3(0.6) : texture(u_lut, vec2(clamp(v_t, 0.0, 1.0) * 0.99609375 + 0.001953125, 0.5)).rgb;
       float l = 0.5 + 0.6 * max(dot(normalize(v_n), u_light), 0.0);
-      gl_FragColor = vec4(c * l * a, a);              // premultiplied (render)
+      o = vec4(c * l * a, a);                         // premultiplied (render)
     }`;
 
   function compile(gl, shaderData, vsSrc = VS, fsSrc = FS) {
@@ -105,8 +106,9 @@
       return s;
     };
     const p = gl.createProgram();
-    const vs = `precision highp float;\n${shaderData.vertexShaderPrelude}\n${shaderData.define}\n${vsSrc}`;
-    gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, fsSrc));
+    // GLSL ES 3.00, the language of MapLibre's prelude (MapLibre 6 needs WebGL 2); #version must come first
+    const vs = `#version 300 es\nprecision highp float;\n${shaderData.vertexShaderPrelude}\n${shaderData.define}\n${vsSrc}`;
+    gl.attachShader(p, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(p, sh(gl.FRAGMENT_SHADER, `#version 300 es\n${fsSrc}`));
     gl.linkProgram(p);
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
     return {
@@ -235,8 +237,8 @@
   const FLOW_CPU = new URLSearchParams(window.location.search).has("flowcpu");   // for testing: the JavaScript version
   const FLOW_VS = `
     uniform float u_zscale; uniform float u_lift; uniform float u_zbias;
-    attribute vec2 a_pos; attribute vec3 a_esa;     // elevation (m), side (-1, 1), alpha
-    varying float v_s; varying float v_a; varying float v_side;
+    in vec2 a_pos; in vec3 a_esa;                   // elevation (m), side (-1, 1), alpha
+    out float v_s; out float v_a; out float v_side;
     void main() {
       v_s = a_esa.y; v_a = a_esa.z;
       float elev = a_esa.x + u_lift;
@@ -253,12 +255,13 @@
   const FLOW_FS = `
     precision mediump float;
     uniform vec3 u_colour; uniform float u_hw;      // half the line width in device pixels
-    varying float v_s; varying float v_a; varying float v_side;
+    in float v_s; in float v_a; in float v_side;
+    out vec4 o;
     void main() {
       if (v_side < 0.0) discard;
       float a = v_a * clamp((1.0 - abs(v_s)) * u_hw, 0.0, 1.0);   // soft edges, about a pixel
       if (a <= 0.0) discard;
-      gl_FragColor = vec4(u_colour * a, a);                      // premultiplied
+      o = vec4(u_colour * a, a);                                 // premultiplied
     }`;
 
   // per cell: the downhill direction of the smoothed ice surface (grid columns, rows) and the speed (m/year)
@@ -1471,10 +1474,15 @@
   // put the map's centre where the line of sight from the camera meets the terrain, the camera staying exactly where
   // it is (MapLibre's flyTo ends with the centre at 0 m when the destination's terrain loaded late)
   function centreOnGround() {
-    const m = S.map, t = m.transform, c = t.getCameraLngLat(), lat = m.getCenter().lat;
-    const perM = t.worldSize / (40075016.686 * Math.cos(lat * Math.PI / 180));
-    const P = m.getPitch() * Math.PI / 180, B = m.getBearing() * Math.PI / 180;
-    const alt = t.elevation + t.cameraToCenterDistance * Math.cos(P) / perM, far = t.cameraToCenterDistance / perM;
+    // the camera from public values (MapLibre 6 has no map.transform), placed as MapLibre does in Mercator units: it
+    // is 0.5 / tan(fov / 2) map heights from the centre, and the world is 512 * 2^zoom CSS pixels wide
+    const m = S.map, elev = m.getCenterElevation();
+    const C = maplibregl.MercatorCoordinate.fromLngLat(m.getCenter(), elev);
+    const dist = 0.5 / Math.tan(m.getVerticalFieldOfView() * Math.PI / 360) * m.getContainer().clientHeight
+                 / (512 * 2 ** m.getZoom());                   // camera to centre, Mercator units
+    const P = m.getPitch() * Math.PI / 180, B = m.getBearing() * Math.PI / 180, mu = C.meterInMercatorCoordinateUnits();
+    const c = new maplibregl.MercatorCoordinate(C.x - dist * Math.sin(P) * Math.sin(B), C.y + dist * Math.sin(P) * Math.cos(B)).toLngLat();
+    const alt = elev + dist * Math.cos(P) / mu, far = dist / mu;
     const at = (D) => [c.lng + D * Math.sin(P) * Math.sin(B) / (111320 * Math.cos(c.lat * Math.PI / 180)),
                        c.lat + D * Math.sin(P) * Math.cos(B) / 111320, alt - D * Math.cos(P)];
     const below = (D) => { const q = at(D), g = m.queryTerrainElevation([q[0], q[1]]); return g != null && q[2] <= g; };
@@ -1483,7 +1491,7 @@
     if (hi === null) return;                                   // no terrain there yet: leave it
     for (let i = 0; i < 12; i++) { const mid = (lo + hi) / 2; if (below(mid)) hi = mid; else lo = mid; }
     const q = at(hi);
-    if (Math.abs(q[2] - t.elevation) < 1) return;
+    if (Math.abs(q[2] - elev) < 1) return;
     const o = m.calculateCameraOptionsFromTo(c, alt, new maplibregl.LngLat(q[0], q[1]), q[2]);
     m.jumpTo({ center: o.center, zoom: o.zoom, bearing: o.bearing, pitch: o.pitch, elevation: o.elevation });
   }
@@ -1491,11 +1499,11 @@
   function flyToPeak(id) {
     const p = (S.peaks || []).find((e) => e[0] === id);
     if (!p || !S.map) return;
-    const map = S.map, tr = map.transform;
+    const map = S.map;
     stopPeakFlight();
     map.stop();
     centreOnGround();           // MapLibre's own flights can leave the centre at 0 m: from there it would rise km
-    const z0 = map.getZoom(), z1 = Math.max(z0, PEAK_FLY_ZOOM), h0 = tr.elevation, h1 = p[4][2];
+    const z0 = map.getZoom(), z1 = Math.max(z0, PEAK_FLY_ZOOM), h0 = map.getCenterElevation(), h1 = p[4][2];
     const from = maplibregl.MercatorCoordinate.fromLngLat(map.getCenter());
     const to = maplibregl.MercatorCoordinate.fromLngLat([p[4][0], p[4][1]]);
     // the flight path: w = visible width relative to the start, u = share of the way, both over the path length S
